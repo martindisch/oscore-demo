@@ -10,6 +10,8 @@ use f3::{
     led::Leds,
 };
 
+use oscore_demo::siprintln;
+
 #[entry]
 fn main() -> ! {
     let mut cp = cortex_m::Peripherals::take().unwrap();
@@ -27,7 +29,7 @@ fn main() -> ! {
     let mut leds = Leds::new(gpioe);
     let mut delay = Delay::new(cp.SYST, clocks);
 
-    iprintln!(stim, "Initialized and ready.");
+    siprintln!(stim, "Initialized and ready.");
 
     oscore_demo::spin_leds(&mut delay, &mut leds);
 

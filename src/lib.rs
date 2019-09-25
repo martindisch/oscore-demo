@@ -5,6 +5,8 @@ use f3::{
     led::Leds,
 };
 
+mod macros;
+
 /// Lights the LEDs in the circle one by one.
 pub fn spin_leds(delay: &mut Delay, leds: &mut Leds) {
     let n = leds.len();
