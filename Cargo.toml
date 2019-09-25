@@ -9,6 +9,7 @@ version = "0.1.0"
 cortex-m = "0.6.0"
 cortex-m-rt = "0.6.10"
 panic-itm = "0.4.1"
+f3 = "0.6.1"
 
 # these are necessary to stop RLS from trying to find tests and complainining
 [[bin]]
