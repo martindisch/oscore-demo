@@ -10,9 +10,9 @@ use cortex_m_rt::entry;
 fn main() -> ! {
     let mut p = Peripherals::take().unwrap();
     let stim = &mut p.ITM.stim[0];
+    iprintln!(stim, "Initialized and ready.");
 
-    iprintln!(stim, "Hello, world!");
-    panic!("Oh, snap!");
+    oscore_demo::panic();
 
     loop {}
 }

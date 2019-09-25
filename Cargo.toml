@@ -10,9 +10,12 @@ cortex-m = "0.6.0"
 cortex-m-rt = "0.6.10"
 panic-itm = "0.4.1"
 
-# this lets us use `cargo fix`
+# these are necessary to stop RLS from trying to find tests and complainining
 [[bin]]
 name = "oscore-demo"
+test = false
+bench = false
+[lib]
 test = false
 bench = false
 
