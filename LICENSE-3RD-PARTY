@@ -5,7 +5,10 @@ applies to:
 - cortex-m, Copyright (c) 2016 Jorge Aparicio
 - cortex-m-rt, Copyright (c) 2017 Jorge Aparicio
 - panic-itm, Copyright (c) 2018 Jorge Aparicio
-- f3, Copyright (c) 2016-2018 Jorge Aparicio
+- heapless, Copyright (c) 2017 Jorge Aparicio
+- enc28j60, Copyright (c) 2018 Jorge Aparicio
+- alt-stm32f30x-hal, Copyright (c) 2018 Jorge Aparicio
+- jnet, Copyright (c) 2018 Jorge Aparicio
 -------------------------------------------------------------------------------
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -32,7 +35,10 @@ applies to:
 - cortex-m
 - cortex-m-rt
 - panic-itm
-- f3
+- heapless
+- enc28j60
+- alt-stm32f30x-hal
+- jnet
 -------------------------------------------------------------------------------
                                  Apache License
                            Version 2.0, January 2004
