@@ -15,6 +15,20 @@ To build this you'll need (in your nightly toolchain):
 $ rustup target add thumbv7em-none-eabihf
 ```
 
+## Hardware setup
+This is the wiring:
+```
+ENC28J60  STM32F303
+--------  ---------
+VCC       3V
+GND       GND
+MISO      PA6
+MOSI      PA7
+SCK       PA5
+CS        PA4
+RST       PA3
+```
+
 ## Building
 Use OpenOCD to connect to the board
 ```
@@ -24,9 +38,10 @@ In a different terminal, create the ITM file and start reading it
 ```
 $ cd /tmp && touch itm.txt && itmdump -F -f itm.txt
 ```
-In yet another terminal, build and enter GDB with
+In yet another terminal, build and enter GDB. We're using the release flag
+since the debug build might be too large for the flash memory.
 ```
-$ cargo run
+$ cargo run --release
 ```
 This will break at the main function, so you need to
 ```
