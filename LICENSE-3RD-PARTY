@@ -4,7 +4,7 @@ The MIT License
 applies to:
 - cortex-m, Copyright (c) 2016 Jorge Aparicio
 - cortex-m-rt, Copyright (c) 2017 Jorge Aparicio
-- panic-itm, Copyright (c) 2018 Jorge Aparicio
+- panic-semihosting, Copyright (c) 2018 Jorge Aparicio
 - heapless, Copyright (c) 2017 Jorge Aparicio
 - enc28j60, Copyright (c) 2018 Jorge Aparicio
 - alt-stm32f30x-hal, Copyright (c) 2018 Jorge Aparicio
@@ -34,7 +34,7 @@ The Apache License
 applies to:
 - cortex-m
 - cortex-m-rt
-- panic-itm
+- panic-semihosting
 - heapless
 - enc28j60
 - alt-stm32f30x-hal

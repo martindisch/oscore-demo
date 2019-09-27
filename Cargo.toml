@@ -8,7 +8,7 @@ version = "0.1.0"
 [dependencies]
 cortex-m = "0.6.0"
 cortex-m-rt = "0.6.10"
-panic-itm = "0.4.1"
+panic-semihosting = "0.5.3"
 heapless = "0.5.1"
 enc28j60 = "0.2.1"
 alt-stm32f30x-hal = { version = "0.22.1", features = ["stm32f303", "rt"] }

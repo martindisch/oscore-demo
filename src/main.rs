@@ -1,9 +1,9 @@
 #![no_std]
 #![no_main]
 
-extern crate panic_itm;
+extern crate panic_semihosting;
 
-use cortex_m::iprintln;
+use core::fmt::Write;
 use cortex_m_rt::entry;
 use enc28j60::Enc28j60;
 use heapless::consts::*;
@@ -14,10 +14,10 @@ use alt_stm32f30x_hal as hal;
 use hal::delay::Delay;
 use hal::prelude::*;
 
-use oscore_demo::siprintln;
+use oscore_demo::{uprint, uprintln};
 
 // uncomment to disable tracing
-// macro_rules! siprintln {
+// macro_rules! uprintln {
 //     ($($tt: tt)*) => {};
 // }
 
@@ -36,13 +36,14 @@ fn main() -> ! {
     let mut rcc = dp.RCC.constrain();
     let mut flash = dp.FLASH.constrain();
     let gpioa = dp.GPIOA.split(&mut rcc.ahb);
-    let stim = &mut cp.ITM.stim[0];
-
-    siprintln!(stim, "Basic initialization done");
-
     let clocks = rcc.cfgr.freeze(&mut flash.acr);
 
-    cp.DWT.enable_cycle_counter();
+    // USART1
+    let serial =
+        dp.USART1
+            .serial((gpioa.pa9, gpioa.pa10), 115_200.bps(), clocks);
+    let (mut tx, mut _rx) = serial.split();
+    uprintln!(tx, "Basic initialization done");
 
     // LED
     let gpioe = dp.GPIOE.split(&mut rcc.ahb);
@@ -76,7 +77,7 @@ fn main() -> ! {
 
     // LED on after initialization
     led.set_high().unwrap();
-    siprintln!(stim, "Complete initialization done");
+    uprintln!(tx, "Complete initialization done");
 
     // FIXME some frames are lost when sent right after initialization
     delay.delay_ms(100_u8);
@@ -89,8 +90,8 @@ fn main() -> ! {
         let len = enc28j60.receive(buf.as_mut()).ok().unwrap();
 
         if let Ok(mut eth) = ether::Frame::parse(&mut buf[..len as usize]) {
-            siprintln!(stim, "\nRx({})", eth.as_bytes().len());
-            siprintln!(stim, "* {:?}", eth);
+            uprintln!(tx, "\nRx({})", eth.as_bytes().len());
+            uprintln!(tx, "* {:?}", eth);
 
             let src_mac = eth.get_source();
 
@@ -99,7 +100,7 @@ fn main() -> ! {
                     if let Ok(arp) = arp::Packet::parse(eth.payload_mut()) {
                         match arp.downcast() {
                             Ok(mut arp) => {
-                                siprintln!(stim, "** {:?}", arp);
+                                uprintln!(tx, "** {:?}", arp);
 
                                 if !arp.is_a_probe() {
                                     cache
@@ -120,16 +121,16 @@ fn main() -> ! {
                                     arp.set_spa(IP);
                                     arp.set_tha(tha);
                                     arp.set_tpa(tpa);
-                                    siprintln!(stim, "\n** {:?}", arp);
+                                    uprintln!(tx, "\n** {:?}", arp);
                                     let arp_len = arp.len();
 
                                     // update the Ethernet header
                                     eth.set_destination(tha);
                                     eth.set_source(MAC);
-                                    siprintln!(stim, "* {:?}", eth);
+                                    uprintln!(tx, "* {:?}", eth);
 
-                                    siprintln!(
-                                        stim,
+                                    uprintln!(
+                                        tx,
                                         "Tx({})",
                                         eth.as_bytes().len()
                                     );
@@ -141,18 +142,18 @@ fn main() -> ! {
                             }
                             Err(_arp) => {
                                 // Not a Ethernet/IPv4 ARP packet
-                                siprintln!(stim, "** {:?}", _arp);
+                                uprintln!(tx, "** {:?}", _arp);
                             }
                         }
                     } else {
                         // malformed ARP packet
-                        siprintln!(stim, "Err(A)");
+                        uprintln!(tx, "Err(A)");
                     }
                 }
                 ether::Type::Ipv4 => {
                     if let Ok(mut ip) = ipv4::Packet::parse(eth.payload_mut())
                     {
-                        siprintln!(stim, "** {:?}", ip);
+                        uprintln!(tx, "** {:?}", ip);
 
                         let src_ip = ip.get_source();
 
@@ -169,9 +170,7 @@ fn main() -> ! {
                                     {
                                         Ok(request) => {
                                             // is an echo request
-                                            siprintln!(
-                                                stim, "*** {:?}", request
-                                            );
+                                            uprintln!(tx, "*** {:?}", request);
 
                                             let src_mac = cache
                                                 .get(&src_ip)
@@ -184,8 +183,8 @@ fn main() -> ! {
                                                 icmp::EchoReply,
                                                 _,
                                             > = request.into();
-                                            siprintln!(
-                                                stim,
+                                            uprintln!(
+                                                tx,
                                                 "\n*** {:?}",
                                                 _reply
                                             );
@@ -194,16 +193,16 @@ fn main() -> ! {
                                             let mut ip = ip.set_source(IP);
                                             ip.set_destination(src_ip);
                                             let _ip = ip.update_checksum();
-                                            siprintln!(stim, "** {:?}", _ip);
+                                            uprintln!(tx, "** {:?}", _ip);
 
                                             // update the Ethernet header
                                             eth.set_destination(*src_mac);
                                             eth.set_source(MAC);
-                                            siprintln!(stim, "* {:?}", eth);
+                                            uprintln!(tx, "* {:?}", eth);
 
                                             led.toggle().unwrap();
-                                            siprintln!(
-                                                stim,
+                                            uprintln!(
+                                                tx,
                                                 "Tx({})",
                                                 eth.as_bytes().len()
                                             );
@@ -213,21 +212,19 @@ fn main() -> ! {
                                                 .unwrap();
                                         }
                                         Err(_icmp) => {
-                                            siprintln!(
-                                                stim, "*** {:?}", _icmp
-                                            );
+                                            uprintln!(tx, "*** {:?}", _icmp);
                                         }
                                     }
                                 } else {
                                     // Malformed ICMP packet
-                                    siprintln!(stim, "Err(B)");
+                                    uprintln!(tx, "Err(B)");
                                 }
                             }
                             ipv4::Protocol::Udp => {
                                 if let Ok(mut udp) =
                                     udp::Packet::parse(ip.payload_mut())
                                 {
-                                    siprintln!(stim, "*** {:?}", udp);
+                                    uprintln!(tx, "*** {:?}", udp);
 
                                     if let Some(src_mac) = cache.get(&src_ip) {
                                         let src_port = udp.get_source();
@@ -237,23 +234,23 @@ fn main() -> ! {
                                         udp.set_source(dst_port);
                                         udp.set_destination(src_port);
                                         udp.zero_checksum();
-                                        siprintln!(stim, "\n*** {:?}", udp);
+                                        uprintln!(tx, "\n*** {:?}", udp);
 
                                         // update the IP header
                                         let mut ip = ip.set_source(IP);
                                         ip.set_destination(src_ip);
                                         let ip = ip.update_checksum();
                                         let ip_len = ip.len();
-                                        siprintln!(stim, "** {:?}", ip);
+                                        uprintln!(tx, "** {:?}", ip);
 
                                         // update the Ethernet header
                                         eth.set_destination(*src_mac);
                                         eth.set_source(MAC);
-                                        siprintln!(stim, "* {:?}", eth);
+                                        uprintln!(tx, "* {:?}", eth);
 
                                         led.toggle().unwrap();
-                                        siprintln!(
-                                            stim,
+                                        uprintln!(
+                                            tx,
                                             "Tx({})",
                                             eth.as_bytes().len()
                                         );
@@ -264,21 +261,21 @@ fn main() -> ! {
                                     }
                                 } else {
                                     // malformed UDP packet
-                                    siprintln!(stim, "Err(C)");
+                                    uprintln!(tx, "Err(C)");
                                 }
                             }
                             _ => {}
                         }
                     } else {
                         // malformed IPv4 packet
-                        siprintln!(stim, "Err(D)");
+                        uprintln!(tx, "Err(D)");
                     }
                 }
                 _ => {}
             }
         } else {
             // malformed Ethernet frame
-            siprintln!(stim, "Err(E)");
+            uprintln!(tx, "Err(E)");
         }
     }
 }

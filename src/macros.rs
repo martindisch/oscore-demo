@@ -1,9 +1,18 @@
-/// Conditionally prints to an ITM channel, only if it's available.
+/// Prints to a serial channel.
 #[macro_export]
-macro_rules! siprintln {
-    ($channel:expr $(, $arg:expr)*) => {
-        if $channel.is_fifo_ready() {
-            iprintln!($channel $(, $arg)*);
-        }
+macro_rules! uprint {
+    ($serial:expr, $($arg:tt)*) => {
+        $serial.write_fmt(format_args!($($arg)*)).ok()
+    };
+}
+
+/// Prints to a serial channel with newline.
+#[macro_export]
+macro_rules! uprintln {
+    ($serial:expr, $fmt:expr) => {
+        uprint!($serial, concat!($fmt, "\r\n"))
+    };
+    ($serial:expr, $fmt:expr, $($arg:tt)*) => {
+        uprint!($serial, concat!($fmt, "\r\n"), $($arg)*)
     };
 }
