@@ -82,7 +82,7 @@ fn main() -> ! {
     // ARP cache
     let mut cache = FnvIndexMap::<_, _, U8>::new();
 
-    let mut buf = [0; 256];
+    let mut buf = [0; 1522];
     loop {
         let len = enc28j60.receive(buf.as_mut()).unwrap();
 
@@ -215,8 +215,6 @@ fn main() -> ! {
                                 if let Ok(mut udp) =
                                     udp::Packet::parse(ip.payload_mut())
                                 {
-                                    uprintln!(tx, "{:?}", udp.payload());
-
                                     if let Some(src_mac) = cache.get(&src_ip) {
                                         let src_port = udp.get_source();
                                         let dst_port = udp.get_destination();
