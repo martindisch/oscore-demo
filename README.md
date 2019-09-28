@@ -26,7 +26,6 @@ MISO        PA6
 MOSI        PA7
 SCK         PA5
 CS          PA4
-RST         PA3         (unused, since we do software reset over SPI)
 ```
 
 And for getting serial debug output (using the SparkFun FTDI Basic Breakout as
@@ -36,7 +35,6 @@ FTDI        STM32F303
 ----        ---------
 GND         GND
 RXI         PA9
-RXO         PA10        (unused, since we don't take serial input)
 ```
 
 ## Building
