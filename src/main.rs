@@ -70,7 +70,6 @@ fn main() -> ! {
         7 * KB,
         MAC.0,
     )
-    .ok()
     .unwrap();
 
     // LED on after initialization
@@ -85,7 +84,7 @@ fn main() -> ! {
 
     let mut buf = [0; 256];
     loop {
-        let len = enc28j60.receive(buf.as_mut()).ok().unwrap();
+        let len = enc28j60.receive(buf.as_mut()).unwrap();
 
         if let Ok(mut eth) = ether::Frame::parse(&mut buf[..len as usize]) {
             uprintln!(tx, "\nRx({})", eth.as_bytes().len());
@@ -105,7 +104,7 @@ fn main() -> ! {
                                 if !arp.is_a_probe() {
                                     cache
                                         .insert(arp.get_spa(), arp.get_sha())
-                                        .ok();
+                                        .unwrap();
                                 }
 
                                 // are they asking for us?
@@ -136,10 +135,7 @@ fn main() -> ! {
                                         "Tx({})",
                                         eth.as_bytes().len()
                                     );
-                                    enc28j60
-                                        .transmit(eth.as_bytes())
-                                        .ok()
-                                        .unwrap();
+                                    enc28j60.transmit(eth.as_bytes()).unwrap();
                                 }
                             }
                             Err(_arp) => {
@@ -159,7 +155,7 @@ fn main() -> ! {
                         uprintln!(tx, "IP packet from {}", src_ip);
 
                         if !src_mac.is_broadcast() {
-                            cache.insert(src_ip, src_mac).ok();
+                            cache.insert(src_ip, src_mac).unwrap();
                         }
 
                         match ip.get_protocol() {
@@ -204,7 +200,6 @@ fn main() -> ! {
                                             );
                                             enc28j60
                                                 .transmit(eth.as_bytes())
-                                                .ok()
                                                 .unwrap();
                                         }
                                         Err(_icmp) => {
@@ -250,7 +245,6 @@ fn main() -> ! {
                                         );
                                         enc28j60
                                             .transmit(eth.as_bytes())
-                                            .ok()
                                             .unwrap();
                                     } else {
                                         uprintln!(
