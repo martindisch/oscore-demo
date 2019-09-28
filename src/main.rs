@@ -89,8 +89,6 @@ fn main() -> ! {
 
         if let Ok(mut eth) = ether::Frame::parse(&mut buf[..len as usize]) {
             uprintln!(tx, "\nRx({})", eth.as_bytes().len());
-            uprintln!(tx, "* {:?}", eth);
-
             let src_mac = eth.get_source();
 
             match eth.get_type() {
@@ -98,7 +96,11 @@ fn main() -> ! {
                     if let Ok(arp) = arp::Packet::parse(eth.payload_mut()) {
                         match arp.downcast() {
                             Ok(mut arp) => {
-                                uprintln!(tx, "** {:?}", arp);
+                                uprintln!(
+                                    tx,
+                                    "ARP packet from {}",
+                                    arp.get_spa()
+                                );
 
                                 if !arp.is_a_probe() {
                                     cache
@@ -119,14 +121,16 @@ fn main() -> ! {
                                     arp.set_spa(IP);
                                     arp.set_tha(tha);
                                     arp.set_tpa(tpa);
-                                    uprintln!(tx, "\n** {:?}", arp);
                                     let arp_len = arp.len();
 
                                     // update the Ethernet header
                                     eth.set_destination(tha);
                                     eth.set_source(MAC);
-                                    uprintln!(tx, "* {:?}", eth);
 
+                                    uprintln!(
+                                        tx,
+                                        "Asked for us, sending reply"
+                                    );
                                     uprintln!(
                                         tx,
                                         "Tx({})",
@@ -140,20 +144,19 @@ fn main() -> ! {
                             }
                             Err(_arp) => {
                                 // Not a Ethernet/IPv4 ARP packet
-                                uprintln!(tx, "** {:?}", _arp);
+                                uprintln!(tx, "ARP downcast fail");
                             }
                         }
                     } else {
                         // malformed ARP packet
-                        uprintln!(tx, "Err(A)");
+                        uprintln!(tx, "Malformed ARP packet");
                     }
                 }
                 ether::Type::Ipv4 => {
                     if let Ok(mut ip) = ipv4::Packet::parse(eth.payload_mut())
                     {
-                        uprintln!(tx, "** {:?}", ip);
-
                         let src_ip = ip.get_source();
+                        uprintln!(tx, "IP packet from {}", src_ip);
 
                         if !src_mac.is_broadcast() {
                             cache.insert(src_ip, src_mac).ok();
@@ -168,8 +171,6 @@ fn main() -> ! {
                                     {
                                         Ok(request) => {
                                             // is an echo request
-                                            uprintln!(tx, "*** {:?}", request);
-
                                             let src_mac = cache
                                                 .get(&src_ip)
                                                 .unwrap_or_else(
@@ -181,24 +182,21 @@ fn main() -> ! {
                                                 icmp::EchoReply,
                                                 _,
                                             > = request.into();
-                                            uprintln!(
-                                                tx,
-                                                "\n*** {:?}",
-                                                _reply
-                                            );
 
                                             // update the IP header
                                             let mut ip = ip.set_source(IP);
                                             ip.set_destination(src_ip);
                                             let _ip = ip.update_checksum();
-                                            uprintln!(tx, "** {:?}", _ip);
 
                                             // update the Ethernet header
                                             eth.set_destination(*src_mac);
                                             eth.set_source(MAC);
-                                            uprintln!(tx, "* {:?}", eth);
 
                                             led.toggle().unwrap();
+                                            uprintln!(
+                                                tx,
+                                                "ICMP request, responding"
+                                            );
                                             uprintln!(
                                                 tx,
                                                 "Tx({})",
@@ -210,19 +208,19 @@ fn main() -> ! {
                                                 .unwrap();
                                         }
                                         Err(_icmp) => {
-                                            uprintln!(tx, "*** {:?}", _icmp);
+                                            uprintln!(tx, "ICMP downcast err");
                                         }
                                     }
                                 } else {
                                     // Malformed ICMP packet
-                                    uprintln!(tx, "Err(B)");
+                                    uprintln!(tx, "Malformed ICMP packet");
                                 }
                             }
                             ipv4::Protocol::Udp => {
                                 if let Ok(mut udp) =
                                     udp::Packet::parse(ip.payload_mut())
                                 {
-                                    uprintln!(tx, "*** {:?}", udp);
+                                    uprintln!(tx, "{:?}", udp.payload());
 
                                     if let Some(src_mac) = cache.get(&src_ip) {
                                         let src_port = udp.get_source();
@@ -232,21 +230,19 @@ fn main() -> ! {
                                         udp.set_source(dst_port);
                                         udp.set_destination(src_port);
                                         udp.zero_checksum();
-                                        uprintln!(tx, "\n*** {:?}", udp);
 
                                         // update the IP header
                                         let mut ip = ip.set_source(IP);
                                         ip.set_destination(src_ip);
                                         let ip = ip.update_checksum();
                                         let ip_len = ip.len();
-                                        uprintln!(tx, "** {:?}", ip);
 
                                         // update the Ethernet header
                                         eth.set_destination(*src_mac);
                                         eth.set_source(MAC);
-                                        uprintln!(tx, "* {:?}", eth);
 
                                         led.toggle().unwrap();
+                                        uprintln!(tx, "Echoing UDP packet");
                                         uprintln!(
                                             tx,
                                             "Tx({})",
@@ -256,24 +252,29 @@ fn main() -> ! {
                                             .transmit(eth.as_bytes())
                                             .ok()
                                             .unwrap();
+                                    } else {
+                                        uprintln!(
+                                            tx,
+                                            "Sender not in ARP cache"
+                                        );
                                     }
                                 } else {
                                     // malformed UDP packet
-                                    uprintln!(tx, "Err(C)");
+                                    uprintln!(tx, "Malformed UDP packet");
                                 }
                             }
                             _ => {}
                         }
                     } else {
                         // malformed IPv4 packet
-                        uprintln!(tx, "Err(D)");
+                        uprintln!(tx, "Malformed IPv4 packet");
                     }
                 }
                 _ => {}
             }
         } else {
             // malformed Ethernet frame
-            uprintln!(tx, "Err(E)");
+            uprintln!(tx, "Malformed Ethernet frame");
         }
     }
 }
