@@ -26,7 +26,7 @@ MISO        PA6
 MOSI        PA7
 SCK         PA5
 CS          PA4
-RST         PA3
+RST         PA3         (unused, since we do software reset over SPI)
 ```
 
 And for getting serial debug output (using the SparkFun FTDI Basic Breakout as

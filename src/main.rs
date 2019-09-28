@@ -30,7 +30,7 @@ const KB: u16 = 1024; // bytes
 
 #[entry]
 fn main() -> ! {
-    let mut cp = cortex_m::Peripherals::take().unwrap();
+    let cp = cortex_m::Peripherals::take().unwrap();
     let dp = hal::pac::Peripherals::take().unwrap();
 
     let mut rcc = dp.RCC.constrain();
@@ -60,14 +60,12 @@ fn main() -> ! {
         .spi((sck, miso, mosi), enc28j60::MODE, 1.mhz(), clocks);
 
     // ENC28J60
-    let mut reset = gpioa.pa3.output().push_pull();
-    reset.set_high().unwrap();
     let mut delay = Delay::new(cp.SYST, clocks);
     let mut enc28j60 = Enc28j60::new(
         spi,
         ncs,
         enc28j60::Unconnected,
-        reset,
+        enc28j60::Unconnected,
         &mut delay,
         7 * KB,
         MAC.0,
