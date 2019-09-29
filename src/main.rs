@@ -14,10 +14,7 @@ use alt_stm32f30x_hal as hal;
 use hal::delay::Delay;
 use hal::prelude::*;
 
-use oscore_demo::{
-    led::{Direction, Leds},
-    uprint, uprintln,
-};
+use oscore_demo::{led::Leds, uprint, uprintln};
 
 // uncomment to disable tracing
 // macro_rules! uprintln {
@@ -75,8 +72,6 @@ fn main() -> ! {
     )
     .unwrap();
 
-    // LED on after initialization
-    leds[Direction::North].on().unwrap();
     uprintln!(tx, "Complete initialization done");
 
     // FIXME some frames are lost when sent right after initialization
@@ -191,9 +186,7 @@ fn main() -> ! {
                                             eth.set_destination(*src_mac);
                                             eth.set_source(MAC);
 
-                                            leds[Direction::North]
-                                                .toggle()
-                                                .unwrap();
+                                            leds.spin().unwrap();
                                             uprintln!(
                                                 tx,
                                                 "ICMP request, responding"
@@ -239,9 +232,7 @@ fn main() -> ! {
                                         eth.set_destination(*src_mac);
                                         eth.set_source(MAC);
 
-                                        leds[Direction::North]
-                                            .toggle()
-                                            .unwrap();
+                                        leds.spin().unwrap();
                                         uprintln!(tx, "Echoing UDP packet");
                                         uprintln!(
                                             tx,

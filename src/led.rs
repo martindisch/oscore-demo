@@ -55,6 +55,7 @@ pub enum Direction {
 
 /// Array of all the user LEDs on the board.
 pub struct Leds {
+    curr: usize,
     leds: [Led; 8],
 }
 
@@ -71,6 +72,7 @@ impl Leds {
         let nw = gpioe.pe8.output().push_pull();
 
         Leds {
+            curr: 0,
             leds: [
                 n.into(),
                 ne.into(),
@@ -82,6 +84,17 @@ impl Leds {
                 nw.into(),
             ],
         }
+    }
+
+    /// Turns the current LED off and the next one on.
+    pub fn spin(&mut self) -> Result<(), ()> {
+        let next = (self.curr + 1) % self.leds.len();
+
+        self.leds[next].on()?;
+        self.leds[self.curr].off()?;
+
+        self.curr = next;
+        Ok(())
     }
 }
 
