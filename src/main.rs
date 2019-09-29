@@ -14,7 +14,10 @@ use alt_stm32f30x_hal as hal;
 use hal::delay::Delay;
 use hal::prelude::*;
 
-use oscore_demo::{uprint, uprintln};
+use oscore_demo::{
+    led::{Direction, Leds},
+    uprint, uprintln,
+};
 
 // uncomment to disable tracing
 // macro_rules! uprintln {
@@ -45,9 +48,9 @@ fn main() -> ! {
     let (mut tx, mut _rx) = serial.split();
     uprintln!(tx, "Basic initialization done");
 
-    // LED
+    // LEDs
     let gpioe = dp.GPIOE.split(&mut rcc.ahb);
-    let mut led = gpioe.pe9.output().push_pull();
+    let mut leds = Leds::new(gpioe);
 
     // SPI
     let mut ncs = gpioa.pa4.output().push_pull();
@@ -73,7 +76,7 @@ fn main() -> ! {
     .unwrap();
 
     // LED on after initialization
-    led.set_high().unwrap();
+    leds[Direction::North].on().unwrap();
     uprintln!(tx, "Complete initialization done");
 
     // FIXME some frames are lost when sent right after initialization
@@ -188,7 +191,9 @@ fn main() -> ! {
                                             eth.set_destination(*src_mac);
                                             eth.set_source(MAC);
 
-                                            led.toggle().unwrap();
+                                            leds[Direction::North]
+                                                .toggle()
+                                                .unwrap();
                                             uprintln!(
                                                 tx,
                                                 "ICMP request, responding"
@@ -234,7 +239,9 @@ fn main() -> ! {
                                         eth.set_destination(*src_mac);
                                         eth.set_source(MAC);
 
-                                        led.toggle().unwrap();
+                                        leds[Direction::North]
+                                            .toggle()
+                                            .unwrap();
                                         uprintln!(tx, "Echoing UDP packet");
                                         uprintln!(
                                             tx,
