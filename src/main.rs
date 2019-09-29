@@ -30,8 +30,8 @@ const KB: u16 = 1024; // bytes
 
 #[entry]
 fn main() -> ! {
-    let cp = cortex_m::Peripherals::take().unwrap();
-    let dp = hal::pac::Peripherals::take().unwrap();
+    let cp = cortex_m::Peripherals::take().expect("Failed taking cp");
+    let dp = hal::pac::Peripherals::take().expect("Failed taking dp");
 
     let mut rcc = dp.RCC.constrain();
     let mut flash = dp.FLASH.constrain();
@@ -51,7 +51,7 @@ fn main() -> ! {
 
     // SPI
     let mut ncs = gpioa.pa4.output().push_pull();
-    ncs.set_high().unwrap();
+    ncs.set_high().expect("Failed setting ncs");
     let sck = gpioa.pa5;
     let miso = gpioa.pa6;
     let mosi = gpioa.pa7;
@@ -70,7 +70,7 @@ fn main() -> ! {
         7 * KB,
         MAC.0,
     )
-    .unwrap();
+    .expect("Failed initializing driver");
 
     uprintln!(tx, "Complete initialization done");
 
@@ -82,7 +82,7 @@ fn main() -> ! {
 
     let mut buf = [0; 1522];
     loop {
-        let len = enc28j60.receive(buf.as_mut()).unwrap();
+        let len = enc28j60.receive(buf.as_mut()).expect("Failed receiving");
 
         if let Ok(mut eth) = ether::Frame::parse(&mut buf[..len as usize]) {
             uprintln!(tx, "\nRx({})", eth.as_bytes().len());
@@ -102,7 +102,7 @@ fn main() -> ! {
                                 if !arp.is_a_probe() {
                                     cache
                                         .insert(arp.get_spa(), arp.get_sha())
-                                        .unwrap();
+                                        .expect("Failed inserting cache");
                                 }
 
                                 // are they asking for us?
@@ -133,7 +133,9 @@ fn main() -> ! {
                                         "Tx({})",
                                         eth.as_bytes().len()
                                     );
-                                    enc28j60.transmit(eth.as_bytes()).unwrap();
+                                    enc28j60
+                                        .transmit(eth.as_bytes())
+                                        .expect("Failed transmitting ARP");
                                 }
                             }
                             Err(_arp) => {
@@ -153,7 +155,9 @@ fn main() -> ! {
                         uprintln!(tx, "IP packet from {}", src_ip);
 
                         if !src_mac.is_broadcast() {
-                            cache.insert(src_ip, src_mac).unwrap();
+                            cache
+                                .insert(src_ip, src_mac)
+                                .expect("Failed inserting cache");
                         }
 
                         match ip.get_protocol() {
@@ -186,7 +190,9 @@ fn main() -> ! {
                                             eth.set_destination(*src_mac);
                                             eth.set_source(MAC);
 
-                                            leds.spin().unwrap();
+                                            leds.spin().expect(
+                                                "Failed advancing led",
+                                            );
                                             uprintln!(
                                                 tx,
                                                 "ICMP request, responding"
@@ -198,7 +204,9 @@ fn main() -> ! {
                                             );
                                             enc28j60
                                                 .transmit(eth.as_bytes())
-                                                .unwrap();
+                                                .expect(
+                                                    "Failed transmitting ICMP",
+                                                );
                                         }
                                         Err(_icmp) => {
                                             uprintln!(tx, "ICMP downcast err");
@@ -232,7 +240,8 @@ fn main() -> ! {
                                         eth.set_destination(*src_mac);
                                         eth.set_source(MAC);
 
-                                        leds.spin().unwrap();
+                                        leds.spin()
+                                            .expect("Failed advancing led");
                                         uprintln!(tx, "Echoing UDP packet");
                                         uprintln!(
                                             tx,
@@ -241,7 +250,7 @@ fn main() -> ! {
                                         );
                                         enc28j60
                                             .transmit(eth.as_bytes())
-                                            .unwrap();
+                                            .expect("Failed transmitting UDP");
                                     } else {
                                         uprintln!(
                                             tx,
