@@ -14,7 +14,7 @@ alt-stm32f30x-hal = { version = "0.22.1", features = ["stm32f303", "rt"] }
 
 [dependencies.enc28j60]
 git = "https://github.com/martindisch/enc28j60"
-rev = "8e941af24c4dc9ef41232602fabd7a854287e460"
+rev = "8b1a38da6f1ea48099c4f4b7ea2dad3df2123257"
 
 [dependencies.jnet]
 git = "https://github.com/japaric/jnet"

@@ -74,9 +74,6 @@ fn main() -> ! {
 
     uprintln!(tx, "Complete initialization done");
 
-    // FIXME some frames are lost when sent right after initialization
-    delay.delay_ms(100_u8);
-
     // ARP cache
     let mut cache = FnvIndexMap::<_, _, U8>::new();
 
@@ -99,8 +96,6 @@ fn main() -> ! {
                     MAC.0,
                 )
                 .expect("Failed initializing driver");
-                // FIXME some frames are lost when sent right after init
-                delay.delay_ms(100_u8);
                 continue;
             }
         };
