@@ -82,7 +82,28 @@ fn main() -> ! {
 
     let mut buf = [0; 1522];
     loop {
-        let len = enc28j60.receive(buf.as_mut()).expect("Failed receiving");
+        let len = match enc28j60.receive(buf.as_mut()) {
+            Ok(len) => len,
+            Err(err) => {
+                uprintln!(tx, "Error receiving, resetting device: {:?}", err);
+                // Reclaim resources currently owned by it
+                let (spi, ncs, _, _) = enc28j60.free();
+                // Reinitialize it
+                enc28j60 = Enc28j60::new(
+                    spi,
+                    ncs,
+                    enc28j60::Unconnected,
+                    enc28j60::Unconnected,
+                    &mut delay,
+                    7 * KB,
+                    MAC.0,
+                )
+                .expect("Failed initializing driver");
+                // FIXME some frames are lost when sent right after init
+                delay.delay_ms(100_u8);
+                continue;
+            }
+        };
 
         if let Ok(mut eth) = ether::Frame::parse(&mut buf[..len as usize]) {
             uprintln!(tx, "\nRx({})", eth.as_bytes().len());
