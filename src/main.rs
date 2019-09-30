@@ -67,7 +67,7 @@ fn main() -> ! {
         enc28j60::Unconnected,
         enc28j60::Unconnected,
         &mut delay,
-        7 * KB,
+        6 * KB,
         MAC.0,
     )
     .expect("Failed initializing driver");
@@ -92,7 +92,7 @@ fn main() -> ! {
                     enc28j60::Unconnected,
                     enc28j60::Unconnected,
                     &mut delay,
-                    7 * KB,
+                    6 * KB,
                     MAC.0,
                 )
                 .expect("Failed initializing driver");
