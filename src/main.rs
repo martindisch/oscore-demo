@@ -77,9 +77,10 @@ fn main() -> ! {
     // ARP cache
     let mut cache = FnvIndexMap::<_, _, U8>::new();
 
-    let mut buf = [0; 1522];
+    let mut rx_buf = [0; 1522];
+    let mut tx_buf = [0; 1522];
     loop {
-        let len = match enc28j60.receive(buf.as_mut()) {
+        let len = match enc28j60.receive(rx_buf.as_mut()) {
             Ok(len) => len,
             Err(err) => {
                 uprintln!(tx, "Error receiving, resetting device: {:?}", err);
@@ -100,45 +101,57 @@ fn main() -> ! {
             }
         };
 
-        if let Ok(mut eth) = ether::Frame::parse(&mut buf[..len as usize]) {
-            uprintln!(tx, "\nRx({})", eth.as_bytes().len());
-            let src_mac = eth.get_source();
+        if let Ok(mut rx_eth) =
+            ether::Frame::parse(&mut rx_buf[..len as usize])
+        {
+            let eth_len = rx_eth.len();
+            // TODO: reuse len
+            uprintln!(tx, "\nRx({})", rx_eth.as_bytes().len());
+            // TODO: figure out when to use this over the ARP cache
+            let src_mac = rx_eth.get_source();
 
-            match eth.get_type() {
+            match rx_eth.get_type() {
                 ether::Type::Arp => {
-                    if let Ok(arp) = arp::Packet::parse(eth.payload_mut()) {
-                        match arp.downcast() {
-                            Ok(mut arp) => {
+                    if let Ok(rx_arp) = arp::Packet::parse(rx_eth.payload()) {
+                        match rx_arp.downcast() {
+                            Ok(rx_arp) => {
                                 uprintln!(
                                     tx,
                                     "ARP packet from {}",
-                                    arp.get_spa()
+                                    rx_arp.get_spa()
                                 );
 
-                                if !arp.is_a_probe() {
+                                if !rx_arp.is_a_probe() {
                                     cache
-                                        .insert(arp.get_spa(), arp.get_sha())
+                                        .insert(
+                                            rx_arp.get_spa(),
+                                            rx_arp.get_sha(),
+                                        )
                                         .expect("Failed inserting cache");
                                 }
 
                                 // are they asking for us?
-                                if arp.get_oper() == arp::Operation::Request
-                                    && arp.get_tpa() == IP
+                                if rx_arp.get_oper() == arp::Operation::Request
+                                    && rx_arp.get_tpa() == IP
                                 {
+                                    // TODO: reuse by storing in variable
                                     // reply to the ARP request
-                                    let tha = arp.get_sha();
-                                    let tpa = arp.get_spa();
+                                    let tha = rx_arp.get_sha();
+                                    let tpa = rx_arp.get_spa();
 
-                                    arp.set_oper(arp::Operation::Reply);
-                                    arp.set_sha(MAC);
-                                    arp.set_spa(IP);
-                                    arp.set_tha(tha);
-                                    arp.set_tpa(tpa);
-                                    let arp_len = arp.len();
-
-                                    // update the Ethernet header
+                                    // Build Ethernet frame from scratch
+                                    let mut eth =
+                                        ether::Frame::new(&mut tx_buf[..]);
                                     eth.set_destination(tha);
                                     eth.set_source(MAC);
+
+                                    // Insert an ARP packet
+                                    eth.arp(|arp| {
+                                        arp.set_oper(arp::Operation::Reply);
+                                        arp.set_spa(IP);
+                                        arp.set_tha(tha);
+                                        arp.set_tpa(tpa);
+                                    });
 
                                     uprintln!(
                                         tx,
@@ -165,9 +178,10 @@ fn main() -> ! {
                     }
                 }
                 ether::Type::Ipv4 => {
-                    if let Ok(mut ip) = ipv4::Packet::parse(eth.payload_mut())
+                    if let Ok(mut rx_ip) =
+                        ipv4::Packet::parse(rx_eth.payload_mut())
                     {
-                        let src_ip = ip.get_source();
+                        let src_ip = rx_ip.get_source();
                         uprintln!(tx, "IP packet from {}", src_ip);
 
                         if !src_mac.is_broadcast() {
@@ -176,10 +190,10 @@ fn main() -> ! {
                                 .expect("Failed inserting cache");
                         }
 
-                        match ip.get_protocol() {
+                        match rx_ip.get_protocol() {
                             ipv4::Protocol::Icmp => {
                                 if let Ok(icmp) =
-                                    icmp::Message::parse(ip.payload_mut())
+                                    icmp::Message::parse(rx_ip.payload_mut())
                                 {
                                     match icmp.downcast::<icmp::EchoRequest>()
                                     {
@@ -191,6 +205,8 @@ fn main() -> ! {
                                                     || unimplemented!(),
                                                 );
 
+                                            // Convert to a reply
+                                            // TODO: Here and below remove _v
                                             let _reply: icmp::Message<
                                                 _,
                                                 icmp::EchoReply,
@@ -198,13 +214,13 @@ fn main() -> ! {
                                             > = request.into();
 
                                             // update the IP header
-                                            let mut ip = ip.set_source(IP);
+                                            let mut ip = rx_ip.set_source(IP);
                                             ip.set_destination(src_ip);
                                             let _ip = ip.update_checksum();
 
                                             // update the Ethernet header
-                                            eth.set_destination(*src_mac);
-                                            eth.set_source(MAC);
+                                            rx_eth.set_destination(*src_mac);
+                                            rx_eth.set_source(MAC);
 
                                             leds.spin().expect(
                                                 "Failed advancing led",
@@ -216,10 +232,10 @@ fn main() -> ! {
                                             uprintln!(
                                                 tx,
                                                 "Tx({})",
-                                                eth.as_bytes().len()
+                                                rx_eth.as_bytes().len()
                                             );
                                             enc28j60
-                                                .transmit(eth.as_bytes())
+                                                .transmit(rx_eth.as_bytes())
                                                 .expect(
                                                     "Failed transmitting ICMP",
                                                 );
@@ -234,27 +250,33 @@ fn main() -> ! {
                                 }
                             }
                             ipv4::Protocol::Udp => {
-                                if let Ok(mut udp) =
-                                    udp::Packet::parse(ip.payload_mut())
+                                if let Ok(rx_udp) =
+                                    udp::Packet::parse(rx_ip.payload())
                                 {
                                     if let Some(src_mac) = cache.get(&src_ip) {
-                                        let src_port = udp.get_source();
-                                        let dst_port = udp.get_destination();
+                                        let src_port = rx_udp.get_source();
+                                        let dst_port =
+                                            rx_udp.get_destination();
 
-                                        // update the UDP header
-                                        udp.set_source(dst_port);
-                                        udp.set_destination(src_port);
-                                        udp.zero_checksum();
-
-                                        // update the IP header
-                                        let mut ip = ip.set_source(IP);
-                                        ip.set_destination(src_ip);
-                                        let ip = ip.update_checksum();
-                                        let ip_len = ip.len();
-
-                                        // update the Ethernet header
+                                        // Build Ethernet frame from scratch
+                                        let mut eth =
+                                            ether::Frame::new(&mut tx_buf[..]);
                                         eth.set_destination(*src_mac);
                                         eth.set_source(MAC);
+
+                                        eth.ipv4(|ip| {
+                                            // Update the IP header
+                                            ip.set_source(IP);
+                                            ip.set_destination(src_ip);
+                                            ip.udp(|udp| {
+                                                // Update the UDP header
+                                                udp.set_source(dst_port);
+                                                udp.set_destination(src_port);
+                                                udp.set_payload(
+                                                    rx_udp.payload(),
+                                                );
+                                            });
+                                        });
 
                                         leds.spin()
                                             .expect("Failed advancing led");
