@@ -104,10 +104,7 @@ fn main() -> ! {
         if let Ok(mut rx_eth) =
             ether::Frame::parse(&mut rx_buf[..len as usize])
         {
-            let eth_len = rx_eth.len();
-            // TODO: reuse len
-            uprintln!(tx, "\nRx({})", rx_eth.as_bytes().len());
-            // TODO: figure out when to use this over the ARP cache
+            uprintln!(tx, "\nRx({})", rx_eth.len());
             let src_mac = rx_eth.get_source();
 
             match rx_eth.get_type() {
@@ -115,18 +112,14 @@ fn main() -> ! {
                     if let Ok(rx_arp) = arp::Packet::parse(rx_eth.payload()) {
                         match rx_arp.downcast() {
                             Ok(rx_arp) => {
-                                uprintln!(
-                                    tx,
-                                    "ARP packet from {}",
-                                    rx_arp.get_spa()
-                                );
+                                let sha = rx_arp.get_sha();
+                                let spa = rx_arp.get_spa();
+
+                                uprintln!(tx, "ARP packet from {}", spa);
 
                                 if !rx_arp.is_a_probe() {
                                     cache
-                                        .insert(
-                                            rx_arp.get_spa(),
-                                            rx_arp.get_sha(),
-                                        )
+                                        .insert(spa, sha)
                                         .expect("Failed inserting cache");
                                 }
 
@@ -134,34 +127,25 @@ fn main() -> ! {
                                 if rx_arp.get_oper() == arp::Operation::Request
                                     && rx_arp.get_tpa() == IP
                                 {
-                                    // TODO: reuse by storing in variable
-                                    // reply to the ARP request
-                                    let tha = rx_arp.get_sha();
-                                    let tpa = rx_arp.get_spa();
-
                                     // Build Ethernet frame from scratch
                                     let mut eth =
                                         ether::Frame::new(&mut tx_buf[..]);
-                                    eth.set_destination(tha);
+                                    eth.set_destination(sha);
                                     eth.set_source(MAC);
 
                                     // Insert an ARP packet
                                     eth.arp(|arp| {
                                         arp.set_oper(arp::Operation::Reply);
                                         arp.set_spa(IP);
-                                        arp.set_tha(tha);
-                                        arp.set_tpa(tpa);
+                                        arp.set_tha(sha);
+                                        arp.set_tpa(spa);
                                     });
 
                                     uprintln!(
                                         tx,
                                         "Asked for us, sending reply"
                                     );
-                                    uprintln!(
-                                        tx,
-                                        "Tx({})",
-                                        eth.as_bytes().len()
-                                    );
+                                    uprintln!(tx, "Tx({})", eth.len());
                                     enc28j60
                                         .transmit(eth.as_bytes())
                                         .expect("Failed transmitting ARP");
@@ -198,47 +182,50 @@ fn main() -> ! {
                                     match icmp.downcast::<icmp::EchoRequest>()
                                     {
                                         Ok(request) => {
-                                            // is an echo request
-                                            let src_mac = cache
-                                                .get(&src_ip)
-                                                .unwrap_or_else(
-                                                    || unimplemented!(),
+                                            if let Some(src_mac) =
+                                                cache.get(&src_ip)
+                                            {
+                                                // convert to a reply
+                                                let _reply: icmp::Message<
+                                                    _,
+                                                    icmp::EchoReply,
+                                                    _,
+                                                > = request.into();
+
+                                                // update the IP header
+                                                let mut ip =
+                                                    rx_ip.set_source(IP);
+                                                ip.set_destination(src_ip);
+                                                ip.update_checksum();
+
+                                                // update the Ethernet header
+                                                rx_eth
+                                                    .set_destination(*src_mac);
+                                                rx_eth.set_source(MAC);
+
+                                                leds.spin().expect(
+                                                    "Failed advancing led",
                                                 );
-
-                                            // Convert to a reply
-                                            // TODO: Here and below remove _v
-                                            let _reply: icmp::Message<
-                                                _,
-                                                icmp::EchoReply,
-                                                _,
-                                            > = request.into();
-
-                                            // update the IP header
-                                            let mut ip = rx_ip.set_source(IP);
-                                            ip.set_destination(src_ip);
-                                            let _ip = ip.update_checksum();
-
-                                            // update the Ethernet header
-                                            rx_eth.set_destination(*src_mac);
-                                            rx_eth.set_source(MAC);
-
-                                            leds.spin().expect(
-                                                "Failed advancing led",
-                                            );
-                                            uprintln!(
-                                                tx,
-                                                "ICMP request, responding"
-                                            );
-                                            uprintln!(
-                                                tx,
-                                                "Tx({})",
-                                                rx_eth.as_bytes().len()
-                                            );
-                                            enc28j60
+                                                uprintln!(
+                                                    tx,
+                                                    "ICMP request, responding"
+                                                );
+                                                uprintln!(
+                                                    tx,
+                                                    "Tx({})",
+                                                    rx_eth.len()
+                                                );
+                                                enc28j60
                                                 .transmit(rx_eth.as_bytes())
                                                 .expect(
                                                     "Failed transmitting ICMP",
                                                 );
+                                            } else {
+                                                uprintln!(
+                                                    tx,
+                                                    "Sender not in ARP cache"
+                                                );
+                                            }
                                         }
                                         Err(_icmp) => {
                                             uprintln!(tx, "ICMP downcast err");
@@ -281,11 +268,7 @@ fn main() -> ! {
                                         leds.spin()
                                             .expect("Failed advancing led");
                                         uprintln!(tx, "Echoing UDP packet");
-                                        uprintln!(
-                                            tx,
-                                            "Tx({})",
-                                            eth.as_bytes().len()
-                                        );
+                                        uprintln!(tx, "Tx({})", eth.len());
                                         enc28j60
                                             .transmit(eth.as_bytes())
                                             .expect("Failed transmitting UDP");
