@@ -75,7 +75,7 @@ fn main() -> ! {
     uprintln!(tx, "Complete initialization done");
 
     // ARP cache
-    let mut cache = FnvIndexMap::<_, _, U8>::new();
+    let mut cache = FnvIndexMap::<_, _, U16>::new();
 
     let mut rx_buf = [0; 1522];
     let mut tx_buf = [0; 1522];
@@ -120,7 +120,7 @@ fn main() -> ! {
                                 if !rx_arp.is_a_probe() {
                                     cache
                                         .insert(spa, sha)
-                                        .expect("Failed inserting cache");
+                                        .expect("Cache full");
                                 }
 
                                 // are they asking for us?
@@ -169,9 +169,7 @@ fn main() -> ! {
                         uprintln!(tx, "IP packet from {}", src_ip);
 
                         if !src_mac.is_broadcast() {
-                            cache
-                                .insert(src_ip, src_mac)
-                                .expect("Failed inserting cache");
+                            cache.insert(src_ip, src_mac).expect("Cache full");
                         }
 
                         match rx_ip.get_protocol() {
