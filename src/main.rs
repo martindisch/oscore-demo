@@ -1,8 +1,11 @@
 #![no_std]
 #![no_main]
+#![feature(alloc_error_handler)]
 
 extern crate panic_semihosting;
 
+use alloc_cortex_m::CortexMHeap;
+use coap_lite::{MessageClass, MessageType, Packet, ResponseType};
 use core::fmt::Write;
 use cortex_m_rt::entry;
 use enc28j60::Enc28j60;
@@ -16,6 +19,9 @@ use hal::prelude::*;
 
 use oscore_demo::{led::Leds, uprint, uprintln};
 
+#[global_allocator]
+static ALLOCATOR: CortexMHeap = CortexMHeap::empty();
+
 // uncomment to disable tracing
 // macro_rules! uprintln {
 //     ($($tt: tt)*) => {};
@@ -27,9 +33,15 @@ const IP: ipv4::Addr = ipv4::Addr([192, 168, 0, 99]);
 
 /* Constants */
 const KB: u16 = 1024; // bytes
+const COAP_PORT: u16 = 5683;
 
 #[entry]
 fn main() -> ! {
+    // Initialize the allocator BEFORE you use it
+    let start = cortex_m_rt::heap_start() as usize;
+    let size = 10 * KB as usize;
+    unsafe { ALLOCATOR.init(start, size) }
+
     let cp = cortex_m::Peripherals::take().expect("Failed taking cp");
     let dp = hal::pac::Peripherals::take().expect("Failed taking dp");
 
@@ -240,29 +252,70 @@ fn main() -> ! {
                         let src_port = rx_udp.get_source();
                         let dst_port = rx_udp.get_destination();
 
-                        // Build Ethernet frame from scratch
-                        let mut eth = ether::Frame::new(&mut tx_buf[..]);
-                        eth.set_destination(*src_mac);
-                        eth.set_source(MAC);
+                        if dst_port == COAP_PORT {
+                            let req = Packet::from_bytes(rx_udp.payload())
+                                .expect("Failed parsing CoAP");
+                            uprintln!(tx, "{:?}", req);
 
-                        eth.ipv4(|ip| {
-                            // Update the IP header
-                            ip.set_source(IP);
-                            ip.set_destination(src_ip);
-                            ip.udp(|udp| {
-                                // Update the UDP header
-                                udp.set_source(dst_port);
-                                udp.set_destination(src_port);
-                                udp.set_payload(rx_udp.payload());
+                            let mut res = Packet::new();
+                            res.header.set_type(MessageType::Acknowledgement);
+                            res.header.code =
+                                MessageClass::Response(ResponseType::Content);
+                            res.header.message_id = req.header.message_id;
+                            res.set_token(req.get_token().clone());
+                            res.payload = b"Hello, world!".to_vec();
+
+                            // Build Ethernet frame from scratch
+                            let mut eth = ether::Frame::new(&mut tx_buf[..]);
+                            eth.set_destination(*src_mac);
+                            eth.set_source(MAC);
+
+                            eth.ipv4(|ip| {
+                                // Update the IP header
+                                ip.set_source(IP);
+                                ip.set_destination(src_ip);
+                                ip.udp(|udp| {
+                                    // Update the UDP header
+                                    udp.set_source(COAP_PORT);
+                                    udp.set_destination(src_port);
+                                    // Wrap CoAP packet
+                                    udp.set_payload(&res.to_bytes().expect(
+                                        "Failed creating CoAP packet",
+                                    ));
+                                });
                             });
-                        });
 
-                        leds.spin().expect("Failed advancing led");
-                        uprintln!(tx, "Echoing UDP packet");
-                        uprintln!(tx, "Tx({})", eth.len());
-                        enc28j60
-                            .transmit(eth.as_bytes())
-                            .expect("Failed transmitting UDP");
+                            leds.spin().expect("Failed advancing led");
+                            uprintln!(tx, "Responding with CoAP packet");
+                            uprintln!(tx, "Tx({})", eth.len());
+                            enc28j60
+                                .transmit(eth.as_bytes())
+                                .expect("Failed transmitting UDP");
+                        } else {
+                            // Build Ethernet frame from scratch
+                            let mut eth = ether::Frame::new(&mut tx_buf[..]);
+                            eth.set_destination(*src_mac);
+                            eth.set_source(MAC);
+
+                            eth.ipv4(|ip| {
+                                // Update the IP header
+                                ip.set_source(IP);
+                                ip.set_destination(src_ip);
+                                ip.udp(|udp| {
+                                    // Update the UDP header
+                                    udp.set_source(dst_port);
+                                    udp.set_destination(src_port);
+                                    udp.set_payload(rx_udp.payload());
+                                });
+                            });
+
+                            leds.spin().expect("Failed advancing led");
+                            uprintln!(tx, "Echoing UDP packet");
+                            uprintln!(tx, "Tx({})", eth.len());
+                            enc28j60
+                                .transmit(eth.as_bytes())
+                                .expect("Failed transmitting UDP");
+                        }
                     }
                     _ => {}
                 }
@@ -270,4 +323,9 @@ fn main() -> ! {
             _ => {}
         }
     }
+}
+
+#[alloc_error_handler]
+pub fn oom(_: core::alloc::Layout) -> ! {
+    panic!("We're officially OOM");
 }

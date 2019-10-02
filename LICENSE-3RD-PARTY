@@ -6,8 +6,10 @@ applies to:
 - cortex-m-rt, Copyright (c) 2017 Jorge Aparicio
 - panic-semihosting, Copyright (c) 2018 Jorge Aparicio
 - heapless, Copyright (c) 2017 Jorge Aparicio
-- enc28j60, Copyright (c) 2018 Jorge Aparicio
 - alt-stm32f30x-hal, Copyright (c) 2018 Jorge Aparicio
+- coap-lite, Copyright (c) 2019 Martin Disch
+- alloc-cortex-m, Copyright (c) 2016-2018 Jorge Aparicio
+- enc28j60, Copyright (c) 2018 Jorge Aparicio
 - jnet, Copyright (c) 2018 Jorge Aparicio
 -------------------------------------------------------------------------------
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -36,8 +38,10 @@ applies to:
 - cortex-m-rt
 - panic-semihosting
 - heapless
-- enc28j60
 - alt-stm32f30x-hal
+- coap-lite
+- alloc-cortex-m
+- enc28j60
 - jnet
 -------------------------------------------------------------------------------
                                  Apache License
