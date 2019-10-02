@@ -5,7 +5,7 @@
 extern crate panic_semihosting;
 
 use alloc_cortex_m::CortexMHeap;
-use coap_lite::{MessageClass, MessageType, Packet, ResponseType};
+use coap_lite::Packet;
 use core::fmt::Write;
 use cortex_m_rt::entry;
 use enc28j60::Enc28j60;
@@ -17,7 +17,7 @@ use alt_stm32f30x_hal as hal;
 use hal::delay::Delay;
 use hal::prelude::*;
 
-use oscore_demo::{led::Leds, uprint, uprintln};
+use oscore_demo::{coap, led::Leds, uprint, uprintln};
 
 #[global_allocator]
 static ALLOCATOR: CortexMHeap = CortexMHeap::empty();
@@ -257,13 +257,8 @@ fn main() -> ! {
                                 .expect("Failed parsing CoAP");
                             uprintln!(tx, "{:?}", req);
 
-                            let mut res = Packet::new();
-                            res.header.set_type(MessageType::Acknowledgement);
-                            res.header.code =
-                                MessageClass::Response(ResponseType::Content);
-                            res.header.message_id = req.header.message_id;
-                            res.set_token(req.get_token().clone());
-                            res.payload = b"Hello, world!".to_vec();
+                            // Handle the request
+                            let res = coap::handle(&req);
 
                             // Build Ethernet frame from scratch
                             let mut eth = ether::Frame::new(&mut tx_buf[..]);
