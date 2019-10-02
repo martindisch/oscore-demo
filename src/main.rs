@@ -252,65 +252,42 @@ fn main() -> ! {
                         let src_port = rx_udp.get_source();
                         let dst_port = rx_udp.get_destination();
 
-                        if dst_port == COAP_PORT {
-                            let req = Packet::from_bytes(rx_udp.payload())
-                                .expect("Failed parsing CoAP");
-                            uprintln!(tx, "{:?}", req);
-
-                            // Handle the request
-                            let res = coap::handle(&req);
-
-                            // Build Ethernet frame from scratch
-                            let mut eth = ether::Frame::new(&mut tx_buf[..]);
-                            eth.set_destination(*src_mac);
-                            eth.set_source(MAC);
-
-                            eth.ipv4(|ip| {
-                                // Update the IP header
-                                ip.set_source(IP);
-                                ip.set_destination(src_ip);
-                                ip.udp(|udp| {
-                                    // Update the UDP header
-                                    udp.set_source(COAP_PORT);
-                                    udp.set_destination(src_port);
-                                    // Wrap CoAP packet
-                                    udp.set_payload(&res.to_bytes().expect(
-                                        "Failed creating CoAP packet",
-                                    ));
-                                });
-                            });
-
-                            leds.spin().expect("Failed advancing led");
-                            uprintln!(tx, "Responding with CoAP packet");
-                            uprintln!(tx, "Tx({})", eth.len());
-                            enc28j60
-                                .transmit(eth.as_bytes())
-                                .expect("Failed transmitting UDP");
-                        } else {
-                            // Build Ethernet frame from scratch
-                            let mut eth = ether::Frame::new(&mut tx_buf[..]);
-                            eth.set_destination(*src_mac);
-                            eth.set_source(MAC);
-
-                            eth.ipv4(|ip| {
-                                // Update the IP header
-                                ip.set_source(IP);
-                                ip.set_destination(src_ip);
-                                ip.udp(|udp| {
-                                    // Update the UDP header
-                                    udp.set_source(dst_port);
-                                    udp.set_destination(src_port);
-                                    udp.set_payload(rx_udp.payload());
-                                });
-                            });
-
-                            leds.spin().expect("Failed advancing led");
-                            uprintln!(tx, "Echoing UDP packet");
-                            uprintln!(tx, "Tx({})", eth.len());
-                            enc28j60
-                                .transmit(eth.as_bytes())
-                                .expect("Failed transmitting UDP");
+                        if dst_port != COAP_PORT {
+                            continue;
                         }
+
+                        let req = Packet::from_bytes(rx_udp.payload())
+                            .expect("Failed parsing CoAP");
+                        // Handle the request
+                        let res = coap::handle(&req);
+
+                        // Build Ethernet frame from scratch
+                        let mut eth = ether::Frame::new(&mut tx_buf[..]);
+                        eth.set_destination(*src_mac);
+                        eth.set_source(MAC);
+
+                        eth.ipv4(|ip| {
+                            // Update the IP header
+                            ip.set_source(IP);
+                            ip.set_destination(src_ip);
+                            ip.udp(|udp| {
+                                // Update the UDP header
+                                udp.set_source(COAP_PORT);
+                                udp.set_destination(src_port);
+                                // Wrap CoAP packet
+                                udp.set_payload(
+                                    &res.to_bytes()
+                                        .expect("Failed creating CoAP packet"),
+                                );
+                            });
+                        });
+
+                        leds.spin().expect("Failed advancing led");
+                        uprintln!(tx, "Responding with CoAP packet");
+                        uprintln!(tx, "Tx({})", eth.len());
+                        enc28j60
+                            .transmit(eth.as_bytes())
+                            .expect("Failed transmitting UDP");
                     }
                     _ => {}
                 }
