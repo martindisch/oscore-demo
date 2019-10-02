@@ -101,198 +101,173 @@ fn main() -> ! {
             }
         };
 
-        if let Ok(mut rx_eth) =
-            ether::Frame::parse(&mut rx_buf[..len as usize])
-        {
-            uprintln!(tx, "\nRx({})", rx_eth.len());
-            let src_mac = rx_eth.get_source();
-
-            match rx_eth.get_type() {
-                ether::Type::Arp => {
-                    if let Ok(rx_arp) = arp::Packet::parse(rx_eth.payload()) {
-                        match rx_arp.downcast() {
-                            Ok(rx_arp) => {
-                                let sha = rx_arp.get_sha();
-                                let spa = rx_arp.get_spa();
-
-                                uprintln!(tx, "ARP packet from {}", spa);
-
-                                if !rx_arp.is_a_probe() {
-                                    cache
-                                        .insert(spa, sha)
-                                        .expect("Cache full");
-                                }
-
-                                // are they asking for us?
-                                if rx_arp.get_oper() == arp::Operation::Request
-                                    && rx_arp.get_tpa() == IP
-                                {
-                                    // Build Ethernet frame from scratch
-                                    let mut eth =
-                                        ether::Frame::new(&mut tx_buf[..]);
-                                    eth.set_destination(sha);
-                                    eth.set_source(MAC);
-
-                                    // Insert an ARP packet
-                                    eth.arp(|arp| {
-                                        arp.set_oper(arp::Operation::Reply);
-                                        arp.set_spa(IP);
-                                        arp.set_tha(sha);
-                                        arp.set_tpa(spa);
-                                    });
-
-                                    uprintln!(
-                                        tx,
-                                        "Asked for us, sending reply"
-                                    );
-                                    uprintln!(tx, "Tx({})", eth.len());
-                                    enc28j60
-                                        .transmit(eth.as_bytes())
-                                        .expect("Failed transmitting ARP");
-                                }
-                            }
-                            Err(_arp) => {
-                                // Not a Ethernet/IPv4 ARP packet
-                                uprintln!(tx, "ARP downcast fail");
-                            }
-                        }
-                    } else {
-                        // malformed ARP packet
-                        uprintln!(tx, "Malformed ARP packet");
-                    }
-                }
-                ether::Type::Ipv4 => {
-                    if let Ok(mut rx_ip) =
-                        ipv4::Packet::parse(rx_eth.payload_mut())
-                    {
-                        let src_ip = rx_ip.get_source();
-                        uprintln!(tx, "IP packet from {}", src_ip);
-
-                        if !src_mac.is_broadcast() {
-                            cache.insert(src_ip, src_mac).expect("Cache full");
-                        }
-
-                        match rx_ip.get_protocol() {
-                            ipv4::Protocol::Icmp => {
-                                if let Ok(icmp) =
-                                    icmp::Message::parse(rx_ip.payload_mut())
-                                {
-                                    match icmp.downcast::<icmp::EchoRequest>()
-                                    {
-                                        Ok(request) => {
-                                            if let Some(src_mac) =
-                                                cache.get(&src_ip)
-                                            {
-                                                // convert to a reply
-                                                let _reply: icmp::Message<
-                                                    _,
-                                                    icmp::EchoReply,
-                                                    _,
-                                                > = request.into();
-
-                                                // update the IP header
-                                                let mut ip =
-                                                    rx_ip.set_source(IP);
-                                                ip.set_destination(src_ip);
-                                                ip.update_checksum();
-
-                                                // update the Ethernet header
-                                                rx_eth
-                                                    .set_destination(*src_mac);
-                                                rx_eth.set_source(MAC);
-
-                                                leds.spin().expect(
-                                                    "Failed advancing led",
-                                                );
-                                                uprintln!(
-                                                    tx,
-                                                    "ICMP request, responding"
-                                                );
-                                                uprintln!(
-                                                    tx,
-                                                    "Tx({})",
-                                                    rx_eth.len()
-                                                );
-                                                enc28j60
-                                                .transmit(rx_eth.as_bytes())
-                                                .expect(
-                                                    "Failed transmitting ICMP",
-                                                );
-                                            } else {
-                                                uprintln!(
-                                                    tx,
-                                                    "Sender not in ARP cache"
-                                                );
-                                            }
-                                        }
-                                        Err(_icmp) => {
-                                            uprintln!(tx, "ICMP downcast err");
-                                        }
-                                    }
-                                } else {
-                                    // Malformed ICMP packet
-                                    uprintln!(tx, "Malformed ICMP packet");
-                                }
-                            }
-                            ipv4::Protocol::Udp => {
-                                if let Ok(rx_udp) =
-                                    udp::Packet::parse(rx_ip.payload())
-                                {
-                                    if let Some(src_mac) = cache.get(&src_ip) {
-                                        let src_port = rx_udp.get_source();
-                                        let dst_port =
-                                            rx_udp.get_destination();
-
-                                        // Build Ethernet frame from scratch
-                                        let mut eth =
-                                            ether::Frame::new(&mut tx_buf[..]);
-                                        eth.set_destination(*src_mac);
-                                        eth.set_source(MAC);
-
-                                        eth.ipv4(|ip| {
-                                            // Update the IP header
-                                            ip.set_source(IP);
-                                            ip.set_destination(src_ip);
-                                            ip.udp(|udp| {
-                                                // Update the UDP header
-                                                udp.set_source(dst_port);
-                                                udp.set_destination(src_port);
-                                                udp.set_payload(
-                                                    rx_udp.payload(),
-                                                );
-                                            });
-                                        });
-
-                                        leds.spin()
-                                            .expect("Failed advancing led");
-                                        uprintln!(tx, "Echoing UDP packet");
-                                        uprintln!(tx, "Tx({})", eth.len());
-                                        enc28j60
-                                            .transmit(eth.as_bytes())
-                                            .expect("Failed transmitting UDP");
-                                    } else {
-                                        uprintln!(
-                                            tx,
-                                            "Sender not in ARP cache"
-                                        );
-                                    }
-                                } else {
-                                    // malformed UDP packet
-                                    uprintln!(tx, "Malformed UDP packet");
-                                }
-                            }
-                            _ => {}
-                        }
-                    } else {
-                        // malformed IPv4 packet
-                        uprintln!(tx, "Malformed IPv4 packet");
-                    }
-                }
-                _ => {}
-            }
-        } else {
+        let parsed = ether::Frame::parse(&mut rx_buf[..len as usize]);
+        if parsed.is_err() {
             // malformed Ethernet frame
             uprintln!(tx, "Malformed Ethernet frame");
+            continue;
+        }
+        let mut rx_eth = parsed.unwrap();
+
+        uprintln!(tx, "\nRx({})", rx_eth.len());
+        let src_mac = rx_eth.get_source();
+        match rx_eth.get_type() {
+            ether::Type::Arp => {
+                let parsed = arp::Packet::parse(rx_eth.payload());
+                if parsed.is_err() {
+                    // malformed ARP packet
+                    uprintln!(tx, "Malformed ARP packet");
+                    continue;
+                }
+                let rx_arp = parsed.unwrap();
+
+                let downcast = rx_arp.downcast();
+                if downcast.is_err() {
+                    // Not a Ethernet/IPv4 ARP packet
+                    uprintln!(tx, "ARP downcast fail");
+                    continue;
+                }
+                let rx_arp = downcast.unwrap();
+
+                let sha = rx_arp.get_sha();
+                let spa = rx_arp.get_spa();
+                uprintln!(tx, "ARP packet from {}", spa);
+
+                if !rx_arp.is_a_probe() {
+                    cache.insert(spa, sha).expect("Cache full");
+                }
+
+                // are they asking for us?
+                if rx_arp.get_oper() == arp::Operation::Request
+                    && rx_arp.get_tpa() == IP
+                {
+                    // Build Ethernet frame from scratch
+                    let mut eth = ether::Frame::new(&mut tx_buf[..]);
+                    eth.set_destination(sha);
+                    eth.set_source(MAC);
+
+                    // Insert an ARP packet
+                    eth.arp(|arp| {
+                        arp.set_oper(arp::Operation::Reply);
+                        arp.set_spa(IP);
+                        arp.set_tha(sha);
+                        arp.set_tpa(spa);
+                    });
+
+                    uprintln!(tx, "Asked for us, sending reply");
+                    uprintln!(tx, "Tx({})", eth.len());
+                    enc28j60
+                        .transmit(eth.as_bytes())
+                        .expect("Failed transmitting ARP");
+                }
+            }
+            ether::Type::Ipv4 => {
+                let parsed = ipv4::Packet::parse(rx_eth.payload_mut());
+                if parsed.is_err() {
+                    // malformed IPv4 packet
+                    uprintln!(tx, "Malformed IPv4 packet");
+                    continue;
+                }
+                let mut rx_ip = parsed.unwrap();
+
+                let src_ip = rx_ip.get_source();
+                uprintln!(tx, "IP packet from {}", src_ip);
+
+                if !src_mac.is_broadcast() {
+                    cache.insert(src_ip, src_mac).expect("Cache full");
+                }
+
+                match rx_ip.get_protocol() {
+                    ipv4::Protocol::Icmp => {
+                        let parsed = icmp::Message::parse(rx_ip.payload_mut());
+                        if parsed.is_err() {
+                            // Malformed ICMP packet
+                            uprintln!(tx, "Malformed ICMP packet");
+                            continue;
+                        }
+                        let icmp = parsed.unwrap();
+
+                        let downcast = icmp.downcast::<icmp::EchoRequest>();
+                        if downcast.is_err() {
+                            uprintln!(tx, "ICMP downcast err");
+                            continue;
+                        }
+                        let request = downcast.unwrap();
+
+                        let lookup = cache.get(&src_ip);
+                        if lookup.is_none() {
+                            uprintln!(tx, "Sender not in ARP cache");
+                            continue;
+                        }
+                        let src_mac = lookup.unwrap();
+
+                        // convert to a reply
+                        let _reply: icmp::Message<_, icmp::EchoReply, _> =
+                            request.into();
+
+                        // update the IP header
+                        let mut ip = rx_ip.set_source(IP);
+                        ip.set_destination(src_ip);
+                        ip.update_checksum();
+
+                        // update the Ethernet header
+                        rx_eth.set_destination(*src_mac);
+                        rx_eth.set_source(MAC);
+
+                        leds.spin().expect("Failed advancing led");
+                        uprintln!(tx, "ICMP request, responding");
+                        uprintln!(tx, "Tx({})", rx_eth.len());
+                        enc28j60
+                            .transmit(rx_eth.as_bytes())
+                            .expect("Failed transmitting ICMP");
+                    }
+                    ipv4::Protocol::Udp => {
+                        let parsed = udp::Packet::parse(rx_ip.payload());
+                        if parsed.is_err() {
+                            // malformed UDP packet
+                            uprintln!(tx, "Malformed UDP packet");
+                            continue;
+                        }
+                        let rx_udp = parsed.unwrap();
+
+                        let lookup = cache.get(&src_ip);
+                        if lookup.is_none() {
+                            uprintln!(tx, "Sender not in ARP cache");
+                            continue;
+                        }
+                        let src_mac = lookup.unwrap();
+
+                        let src_port = rx_udp.get_source();
+                        let dst_port = rx_udp.get_destination();
+
+                        // Build Ethernet frame from scratch
+                        let mut eth = ether::Frame::new(&mut tx_buf[..]);
+                        eth.set_destination(*src_mac);
+                        eth.set_source(MAC);
+
+                        eth.ipv4(|ip| {
+                            // Update the IP header
+                            ip.set_source(IP);
+                            ip.set_destination(src_ip);
+                            ip.udp(|udp| {
+                                // Update the UDP header
+                                udp.set_source(dst_port);
+                                udp.set_destination(src_port);
+                                udp.set_payload(rx_udp.payload());
+                            });
+                        });
+
+                        leds.spin().expect("Failed advancing led");
+                        uprintln!(tx, "Echoing UDP packet");
+                        uprintln!(tx, "Tx({})", eth.len());
+                        enc28j60
+                            .transmit(eth.as_bytes())
+                            .expect("Failed transmitting UDP");
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
         }
     }
 }
