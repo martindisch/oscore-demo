@@ -1,12 +1,16 @@
 //! Handling of CoAP messages.
 
 use alloc::vec::Vec;
+use alt_stm32f30x_hal::{device::USART1, serial::Tx};
 use coap_lite::{
     CoapOption, ContentFormat, MessageClass, MessageType, Packet, ResponseType,
 };
+use core::fmt::Write;
+
+use crate::{uprint, uprintln};
 
 /// Handles a CoAP message and returns a response.
-pub fn handle(req: &Packet) -> Packet {
+pub fn handle(tx: &mut Tx<USART1>, req: &Packet) -> Packet {
     if let Some(path) = req.get_option(CoapOption::UriPath) {
         // Copy the linked list of references so we can manipulate it for
         // easier traversal

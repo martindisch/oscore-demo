@@ -259,7 +259,7 @@ fn main() -> ! {
                         let req = Packet::from_bytes(rx_udp.payload())
                             .expect("Failed parsing CoAP");
                         // Handle the request
-                        let res = coap::handle(&req);
+                        let res = coap::handle(&mut tx, &req);
 
                         // Build Ethernet frame from scratch
                         let mut eth = ether::Frame::new(&mut tx_buf[..]);
