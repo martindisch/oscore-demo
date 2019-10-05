@@ -11,6 +11,7 @@ applies to:
 - alloc-cortex-m, Copyright (c) 2016-2018 Jorge Aparicio
 - enc28j60, Copyright (c) 2018 Jorge Aparicio
 - jnet, Copyright (c) 2018 Jorge Aparicio
+- oscore, Copyright (c) 2019 Martin Disch
 -------------------------------------------------------------------------------
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -43,6 +44,7 @@ applies to:
 - alloc-cortex-m
 - enc28j60
 - jnet
+- oscore
 -------------------------------------------------------------------------------
                                  Apache License
                            Version 2.0, January 2004

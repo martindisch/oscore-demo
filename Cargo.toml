@@ -22,6 +22,11 @@ rev = "8b1a38da6f1ea48099c4f4b7ea2dad3df2123257"
 git = "https://github.com/japaric/jnet"
 rev = "b5bd70cb998b1e01236f6b07ebc516a0359fde3d"
 
+[dependencies.oscore]
+git = "https://github.com/martindisch/oscore"
+rev = "8db91495e501468315cd824e9524a364c03655bd"
+default-features = false
+
 # these are necessary to stop RLS from trying to find tests and complainining
 [[bin]]
 name = "oscore-demo"
