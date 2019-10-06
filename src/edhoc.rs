@@ -27,6 +27,8 @@ pub struct EdhocHandler {
     auth_peer: [u8; 32],
     kid: Vec<u8>,
     msg3_receiver: Option<PartyV<api::Msg3Receiver>>,
+    master_secret: Option<Vec<u8>>,
+    master_salt: Option<Vec<u8>>,
 }
 
 impl EdhocHandler {
@@ -44,6 +46,8 @@ impl EdhocHandler {
             kid,
             auth_peer,
             msg3_receiver: None,
+            master_secret: None,
+            master_salt: None,
         }
     }
 
@@ -150,6 +154,8 @@ impl EdhocHandler {
                     master_secret,
                     master_salt
                 );
+                self.master_secret = Some(master_secret);
+                self.master_salt = Some(master_salt);
 
                 // Return an empty message, which results in the final ACK to
                 // the client
@@ -162,6 +168,21 @@ impl EdhocHandler {
                 );
                 None
             }
+        }
+    }
+
+    /// Returns the negotiated master secret & salt, resetting the EDHOC state.
+    pub fn take_params(&mut self) -> Option<(Vec<u8>, Vec<u8>)> {
+        if self.state == State::Complete {
+            // Reset the state
+            self.state = State::WaitingForFirst;
+            // Take and return the derived context
+            Some((
+                self.master_secret.take().unwrap(),
+                self.master_salt.take().unwrap(),
+            ))
+        } else {
+            None
         }
     }
 }
