@@ -11,7 +11,9 @@ use oscore::edhoc::{
 
 use crate::{uprint, uprintln};
 
-enum Stage {
+/// The state in which the EDHOC exchange is.
+#[derive(PartialEq)]
+enum State {
     WaitingForFirst,
     WaitingForThird,
     Complete,
@@ -19,7 +21,7 @@ enum Stage {
 
 /// Handles the EDHOC exchange.
 pub struct EdhocHandler {
-    stage: Stage,
+    state: State,
     auth_priv: [u8; 32],
     auth_pub: [u8; 32],
     auth_peer: [u8; 32],
@@ -36,7 +38,7 @@ impl EdhocHandler {
         auth_peer: [u8; 32],
     ) -> EdhocHandler {
         EdhocHandler {
-            stage: Stage::WaitingForFirst,
+            state: State::WaitingForFirst,
             auth_priv,
             auth_pub,
             kid,
@@ -51,8 +53,8 @@ impl EdhocHandler {
         tx: &mut Tx<USART1>,
         msg: Vec<u8>,
     ) -> Option<Vec<u8>> {
-        match self.stage {
-            Stage::WaitingForFirst => {
+        match self.state {
+            State::WaitingForFirst => {
                 uprintln!(
                     tx,
                     "Received an EDHOC message while waiting for message_1"
@@ -101,13 +103,13 @@ impl EdhocHandler {
                 };
                 // Store the state and advance our progress
                 self.msg3_receiver = Some(msg3_receiver);
-                self.stage = Stage::WaitingForThird;
+                self.state = State::WaitingForThird;
                 uprintln!(tx, "Successfully built message_2");
 
                 // Return message_2 to be sent
                 Some(msg2_bytes)
             }
-            Stage::WaitingForThird => {
+            State::WaitingForThird => {
                 uprintln!(
                     tx,
                     "Received an EDHOC message while waiting for message_3"
@@ -139,7 +141,7 @@ impl EdhocHandler {
                     Ok(val) => val,
                 };
 
-                self.stage = Stage::Complete;
+                self.state = State::Complete;
                 uprintln!(
                     tx,
                     "Successfully derived the master secret and salt\r\n\
@@ -153,7 +155,7 @@ impl EdhocHandler {
                 // the client
                 Some(vec![])
             }
-            Stage::Complete => {
+            State::Complete => {
                 uprintln!(
                     tx,
                     "Received an EDHOC message, but we're already complete"
