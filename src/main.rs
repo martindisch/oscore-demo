@@ -18,7 +18,8 @@ use hal::delay::Delay;
 use hal::prelude::*;
 
 use oscore_demo::{
-    coap::CoapHandler, edhoc::EdhocHandler, led::Leds, uprint, uprintln,
+    coap::CoapHandler, edhoc::EdhocHandler, led::Leds, oscore::OscoreHandler,
+    uprint, uprintln,
 };
 
 #[global_allocator]
@@ -120,7 +121,9 @@ fn main() -> ! {
     let edhoc =
         EdhocHandler::new(AUTH_PRIV, AUTH_PUB, KID.to_vec(), AUTH_PEER);
     // This will be responsible for dealing with CoAP messages
-    let mut coap = CoapHandler::new(edhoc);
+    let coap = CoapHandler::new();
+    // And finally this is the layer for OSCORE
+    let mut oscore = OscoreHandler::new(edhoc, coap);
 
     loop {
         let len = match enc28j60.receive(rx_buf.as_mut()) {
@@ -287,10 +290,8 @@ fn main() -> ! {
                             continue;
                         }
 
-                        let req = Packet::from_bytes(rx_udp.payload())
-                            .expect("Failed parsing CoAP");
                         // Handle the request
-                        let res = coap.handle(&mut tx, req);
+                        let res = oscore.handle(&mut tx, rx_udp.payload());
                         if res.is_none() {
                             continue;
                         }
@@ -310,10 +311,7 @@ fn main() -> ! {
                                 udp.set_source(COAP_PORT);
                                 udp.set_destination(src_port);
                                 // Wrap CoAP packet
-                                udp.set_payload(
-                                    &res.to_bytes()
-                                        .expect("Failed creating CoAP packet"),
-                                );
+                                udp.set_payload(&res);
                             });
                         });
 

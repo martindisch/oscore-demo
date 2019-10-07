@@ -10,20 +10,27 @@ use core::fmt::Write;
 use crate::{edhoc::EdhocHandler, uprint, uprintln};
 
 /// Handles CoAP messages.
-pub struct CoapHandler {
-    edhoc: EdhocHandler,
+pub struct CoapHandler;
+
+impl Default for CoapHandler {
+    fn default() -> CoapHandler {
+        CoapHandler
+    }
 }
 
 impl CoapHandler {
     /// Creates a new `CoapHandler`.
-    pub fn new(edhoc: EdhocHandler) -> CoapHandler {
-        CoapHandler { edhoc }
+    pub fn new() -> CoapHandler {
+        // Since this is an empty struct, the constructor is not necessary, but
+        // it's still here in case that changes.
+        Default::default()
     }
 
     /// Handles a CoAP message and returns a response.
     pub fn handle(
         &mut self,
         tx: &mut Tx<USART1>,
+        edhoc: &mut EdhocHandler,
         req: Packet,
     ) -> Option<Packet> {
         if let Some(path) = req.get_option(CoapOption::UriPath) {
@@ -56,7 +63,7 @@ impl CoapHandler {
                             // Duplicate the token for later use
                             let token = req.get_token().clone();
                             // Get our response from the EDHOC handler
-                            let payload = self.edhoc.handle(tx, req.payload);
+                            let payload = edhoc.handle(tx, req.payload);
                             // Do an early return with None if we got that
                             let payload = payload?;
 
