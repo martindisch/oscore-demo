@@ -5,7 +5,6 @@
 extern crate panic_semihosting;
 
 use alloc_cortex_m::CortexMHeap;
-use coap_lite::Packet;
 use core::fmt::Write;
 use cortex_m_rt::entry;
 use enc28j60::Enc28j60;
@@ -59,6 +58,8 @@ const AUTH_PEER: [u8; 32] = [
     0xFC, 0xFF, 0xB7, 0x53, 0x10, 0xC0, 0x15, 0xBF, 0x5C, 0xBA, 0x2E, 0xC0,
     0xA2, 0x36, 0xE6, 0x65, 0x0C, 0x8A, 0xB9, 0xC7,
 ];
+// Key ID of peer
+const KID_PEER: [u8; 1] = [0xA2];
 
 #[entry]
 fn main() -> ! {
@@ -123,7 +124,8 @@ fn main() -> ! {
     // This will be responsible for dealing with CoAP messages
     let coap = CoapHandler::new();
     // And finally this is the layer for OSCORE
-    let mut oscore = OscoreHandler::new(edhoc, coap);
+    let mut oscore =
+        OscoreHandler::new(edhoc, coap, KID.to_vec(), KID_PEER.to_vec());
 
     loop {
         let len = match enc28j60.receive(rx_buf.as_mut()) {
