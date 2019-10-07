@@ -21,8 +21,11 @@ enum State {
 
 /// Handles the EDHOC exchange.
 pub struct EdhocHandler {
-    state: State,
+    auth_priv: [u8; 32],
+    auth_pub: [u8; 32],
+    kid: Vec<u8>,
     auth_peer: [u8; 32],
+    state: State,
     msg1_receiver: Option<PartyV<api::Msg1Receiver>>,
     msg3_receiver: Option<PartyV<api::Msg3Receiver>>,
     master_secret: Option<Vec<u8>>,
@@ -37,23 +40,13 @@ impl EdhocHandler {
         kid: Vec<u8>,
         auth_peer: [u8; 32],
     ) -> EdhocHandler {
-        // "Generate" an ECDH key pair (this is hardcoded, but MUST be
-        // ephemeral and generated randomly)
-        let eph = [
-            0x17, 0xCD, 0xC7, 0xBC, 0xA3, 0xF2, 0xA0, 0xBD, 0xA6, 0x0C, 0x6D,
-            0xE5, 0xB9, 0x6F, 0x82, 0xA3, 0x62, 0x39, 0xB4, 0x4B, 0xDE, 0x39,
-            0x7A, 0x38, 0x62, 0xD5, 0x29, 0xBA, 0x8B, 0x3D, 0x7C, 0x62,
-        ];
-        // Choose a connection identifier (also hardcoded, could be
-        // chosen by user or generated randomly)
-        let c_v = [0xC4].to_vec();
-
-        // Initialize what we need to handle messages
-        let msg1_receiver = PartyV::new(c_v, eph, &auth_priv, &auth_pub, kid);
         EdhocHandler {
-            state: State::WaitingForFirst,
+            auth_priv,
+            auth_pub,
+            kid,
             auth_peer,
-            msg1_receiver: Some(msg1_receiver),
+            state: State::WaitingForFirst,
+            msg1_receiver: None,
             msg3_receiver: None,
             master_secret: None,
             master_salt: None,
@@ -72,6 +65,9 @@ impl EdhocHandler {
                     tx,
                     "Received an EDHOC message while waiting for message_1"
                 );
+                // Setup
+                self.initialize();
+
                 // Take out the receiver (which we know exists at this point)
                 let msg1_receiver = self.msg1_receiver.take().unwrap();
                 // Try to deal with message_1
@@ -115,6 +111,7 @@ impl EdhocHandler {
                     match msg3_receiver.extract_peer_kid(msg) {
                         Err(OwnOrPeerError::PeerError(s)) => {
                             uprintln!(tx, "Received an EDHOC error: {}", s);
+                            self.state = State::WaitingForFirst;
                             return None;
                         }
                         Err(OwnOrPeerError::OwnError(b)) => {
@@ -122,6 +119,7 @@ impl EdhocHandler {
                                 tx,
                                 "Ran into an issue dealing with the message"
                             );
+                            self.state = State::WaitingForFirst;
                             return Some(b);
                         }
                         Ok(val) => val,
@@ -131,6 +129,7 @@ impl EdhocHandler {
                 {
                     Err(OwnError(b)) => {
                         uprintln!(tx, "Ran into an issue verifying message_3");
+                        self.state = State::WaitingForFirst;
                         return Some(b);
                     }
                     Ok(val) => val,
@@ -175,5 +174,29 @@ impl EdhocHandler {
         } else {
             None
         }
+    }
+
+    /// Initializes the handler to its original state.
+    fn initialize(&mut self) {
+        // "Generate" an ECDH key pair (this is hardcoded, but MUST be
+        // ephemeral and generated randomly)
+        let eph = [
+            0x17, 0xCD, 0xC7, 0xBC, 0xA3, 0xF2, 0xA0, 0xBD, 0xA6, 0x0C, 0x6D,
+            0xE5, 0xB9, 0x6F, 0x82, 0xA3, 0x62, 0x39, 0xB4, 0x4B, 0xDE, 0x39,
+            0x7A, 0x38, 0x62, 0xD5, 0x29, 0xBA, 0x8B, 0x3D, 0x7C, 0x62,
+        ];
+        // Choose a connection identifier (also hardcoded, could be
+        // chosen by user or generated randomly)
+        let c_v = [0xC4].to_vec();
+
+        // Initialize what we need to handle messages
+        let msg1_receiver = PartyV::new(
+            c_v,
+            eph,
+            &self.auth_priv,
+            &self.auth_pub,
+            self.kid.clone(),
+        );
+        self.msg1_receiver = Some(msg1_receiver);
     }
 }

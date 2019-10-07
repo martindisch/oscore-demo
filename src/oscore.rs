@@ -13,8 +13,8 @@ pub struct OscoreHandler {
     edhoc: EdhocHandler,
     coap: CoapHandler,
     oscore: Option<SecurityContext>,
-    sender_id: Option<Vec<u8>>,
-    recipient_id: Option<Vec<u8>>,
+    sender_id: Vec<u8>,
+    recipient_id: Vec<u8>,
 }
 
 impl OscoreHandler {
@@ -29,8 +29,8 @@ impl OscoreHandler {
             edhoc,
             coap,
             oscore: None,
-            sender_id: Some(sender_id),
-            recipient_id: Some(recipient_id),
+            sender_id,
+            recipient_id,
         }
     }
 
@@ -52,8 +52,8 @@ impl OscoreHandler {
                 SecurityContext::new(
                     master_secret,
                     master_salt,
-                    self.sender_id.take().unwrap(),
-                    self.recipient_id.take().unwrap(),
+                    self.sender_id.clone(),
+                    self.recipient_id.clone(),
                 )
                 .expect("Failed intializing OSCORE"),
             );
