@@ -2,7 +2,7 @@
 authors = ["Martin Disch <martindisch@gmail.com>"]
 edition = "2018"
 readme = "README.md"
-name = "oscore-demo"
+name = "server"
 version = "0.1.0"
 
 [dependencies]
@@ -29,7 +29,7 @@ default-features = false
 
 # these are necessary to stop RLS from trying to find tests and complainining
 [[bin]]
-name = "oscore-demo"
+name = "server"
 test = false
 bench = false
 [lib]

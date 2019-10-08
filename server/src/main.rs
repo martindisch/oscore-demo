@@ -16,7 +16,7 @@ use alt_stm32f30x_hal as hal;
 use hal::delay::Delay;
 use hal::prelude::*;
 
-use oscore_demo::{
+use server::{
     coap::CoapHandler, edhoc::EdhocHandler, led::Leds, oscore::OscoreHandler,
     uprint, uprintln,
 };
