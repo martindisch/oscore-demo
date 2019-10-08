@@ -24,11 +24,6 @@ use server::{
 #[global_allocator]
 static ALLOCATOR: CortexMHeap = CortexMHeap::empty();
 
-// uncomment to disable tracing
-// macro_rules! uprintln {
-//     ($($tt: tt)*) => {};
-// }
-
 /* Configuration */
 const MAC: mac::Addr = mac::Addr([0x20, 0x18, 0x03, 0x01, 0x00, 0x00]);
 const IP: ipv4::Addr = ipv4::Addr([192, 168, 0, 99]);
