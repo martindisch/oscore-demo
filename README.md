@@ -2,7 +2,8 @@
 
 This will hopefully turn into a demonstration of protecting CoAP with OSCORE on
 embedded devices some day.
-At the moment, this is built specifically for the STM32F303VCT6.
+At the moment, this is built specifically for the STM32F303VCT6 (server) and
+STM32F407VGT6U (client).
 
 ## Dependencies
 
@@ -27,6 +28,16 @@ MOSI        PA7
 SCK         PA5
 CS          PA4
 ```
+```
+ENC28J60    STM32F407
+--------    ---------
+VCC         3V
+GND         GND
+MISO        PB4
+MOSI        PB5
+SCK         PB3
+CS          PA15
+```
 
 And for getting serial debug output (using the SparkFun FTDI Basic Breakout as
 USB to Serial IC):
@@ -35,6 +46,12 @@ FTDI        STM32F303
 ----        ---------
 GND         GND
 RXI         PA9
+```
+```
+FTDI        STM32F407
+----        ---------
+GND         GND
+RXI         PB6
 ```
 
 ## Building
@@ -53,11 +70,12 @@ To exit minicom, use <kbd>CTRL</kbd>+<kbd>A</kbd>+<kbd>X</kbd>.
 
 Use OpenOCD to connect to the board
 ```console
-$ openocd -f interface/stlink-v2-1.cfg -f target/stm32f3x.cfg
+$ openocd -f interface/stlink-v2-1.cfg -f target/stm32f3x.cfg   # For the F303
+$ openocd -f interface/stlink-v2-1.cfg -f target/stm32f4x.cfg   # For the F407
 ```
 In a different terminal, open minicom to see serial output
 ```console
-$ minicom -D /dev/ttyUSB0 -b 115200
+$ minicom -D /dev/ttyUSB0
 ```
 In yet another terminal, build and enter GDB. We're using the release flag
 since the debug build might be too large for the flash memory.
