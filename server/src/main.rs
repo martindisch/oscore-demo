@@ -69,12 +69,13 @@ fn main() -> ! {
     let mut rcc = dp.RCC.constrain();
     let mut flash = dp.FLASH.constrain();
     let gpioa = dp.GPIOA.split(&mut rcc.ahb);
+    let gpiob = dp.GPIOB.split(&mut rcc.ahb);
     let clocks = rcc.cfgr.freeze(&mut flash.acr);
 
     // USART1
     let serial =
         dp.USART1
-            .serial((gpioa.pa9, gpioa.pa10), 115_200.bps(), clocks);
+            .serial((gpiob.pb6, gpiob.pb7), 115_200.bps(), clocks);
     let (mut tx, mut _rx) = serial.split();
     uprintln!(tx, "Basic initialization done");
 
@@ -83,11 +84,11 @@ fn main() -> ! {
     let mut leds = Leds::new(gpioe);
 
     // SPI
-    let mut ncs = gpioa.pa4.output().push_pull();
+    let mut ncs = gpioa.pa15.output().push_pull();
     ncs.set_high().expect("Failed setting ncs");
-    let sck = gpioa.pa5;
-    let miso = gpioa.pa6;
-    let mosi = gpioa.pa7;
+    let sck = gpiob.pb3;
+    let miso = gpiob.pb4;
+    let mosi = gpiob.pb5;
     let spi = dp
         .SPI1
         .spi((sck, miso, mosi), enc28j60::MODE, 1.mhz(), clocks);

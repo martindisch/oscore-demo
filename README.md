@@ -19,18 +19,8 @@ $ rustup target add thumbv7em-none-eabihf
 ## Hardware setup
 This is the wiring:
 ```
-ENC28J60    STM32F303
---------    ---------
-VCC         3V
-GND         GND
-MISO        PA6
-MOSI        PA7
-SCK         PA5
-CS          PA4
-```
-```
-ENC28J60    STM32F407
---------    ---------
+ENC28J60    STM32F303/407
+--------    -------------
 VCC         3V
 GND         GND
 MISO        PB4
@@ -42,14 +32,8 @@ CS          PA15
 And for getting serial debug output (using the SparkFun FTDI Basic Breakout as
 USB to Serial IC):
 ```
-FTDI        STM32F303
-----        ---------
-GND         GND
-RXI         PA9
-```
-```
-FTDI        STM32F407
-----        ---------
+FTDI        STM32F303/407
+----        -------------
 GND         GND
 RXI         PB6
 ```
