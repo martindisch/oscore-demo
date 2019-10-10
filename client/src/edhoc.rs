@@ -5,7 +5,7 @@ use core::fmt::Write;
 use oscore::edhoc::{
     api,
     error::{OwnError, OwnOrPeerError},
-    PartyV,
+    PartyU,
 };
 use stm32f4xx_hal::{serial::Tx, stm32::USART1};
 
@@ -14,8 +14,9 @@ use crate::{uprint, uprintln};
 /// The state in which the EDHOC exchange is.
 #[derive(Clone, Copy, PartialEq)]
 pub enum State {
+    Init,
     WaitingForSecond,
-    WaitingForFourth,
+    WaitingForAck,
     Complete,
 }
 
@@ -26,8 +27,7 @@ pub struct EdhocHandler {
     kid: Vec<u8>,
     auth_peer: [u8; 32],
     state: State,
-    msg1_receiver: Option<PartyV<api::Msg1Receiver>>,
-    msg3_receiver: Option<PartyV<api::Msg3Receiver>>,
+    msg2_receiver: Option<PartyU<api::Msg2Receiver>>,
     master_secret: Option<Vec<u8>>,
     master_salt: Option<Vec<u8>>,
 }
@@ -45,12 +45,47 @@ impl EdhocHandler {
             auth_pub,
             kid,
             auth_peer,
-            state: State::WaitingForSecond,
-            msg1_receiver: None,
-            msg3_receiver: None,
+            state: State::Init,
+            msg2_receiver: None,
             master_secret: None,
             master_salt: None,
         }
+    }
+
+    /// Returns the first EDHOC message.
+    pub fn go(&mut self, tx: &mut Tx<USART1>) -> Option<Vec<u8>> {
+        // "Generate" an ECDH key pair (this is hardcoded, but MUST be
+        // ephemeral and generated randomly)
+        let eph = [
+            0xD4, 0xD8, 0x1A, 0xBA, 0xFA, 0xD9, 0x08, 0xA0, 0xCC, 0xEF, 0xEF,
+            0x5A, 0xD6, 0xB0, 0x5D, 0x50, 0x27, 0x02, 0xF1, 0xC1, 0x6F, 0x23,
+            0x2C, 0x25, 0x92, 0x93, 0x09, 0xAC, 0x44, 0x1B, 0x95, 0x8E,
+        ];
+        // Choose a connection identifier (also hardcoded, could be
+        // chosen by user or generated randomly)
+        let c_v = [0xC3].to_vec();
+
+        // Initialize what we need to handle messages
+        let msg1_sender = PartyU::new(
+            c_v,
+            eph,
+            &self.auth_priv,
+            &self.auth_pub,
+            self.kid.clone(),
+        );
+        // type = 1 is the case in CoAP, where party U can correlate
+        // message_1 and message_2 with the token.
+        // If an error happens here, we just abort. No need to send a message,
+        // since the protocol hasn't started yet.
+        let (msg1_bytes, msg2_receiver) = msg1_sender
+            .generate_message_1(1)
+            .expect("Error generating message_1");
+        self.msg2_receiver = Some(msg2_receiver);
+        self.state = State::WaitingForSecond;
+
+        uprintln!(tx, "Successfully built message_1");
+
+        Some(msg1_bytes)
     }
 
     /// Handles an EDHOC message and returns the reply to send.
@@ -60,82 +95,52 @@ impl EdhocHandler {
         msg: Vec<u8>,
     ) -> Option<Vec<u8>> {
         match self.state {
+            State::Init => {
+                uprintln!(tx, "Received EDHOC message, but we're not ready");
+                None
+            }
             State::WaitingForSecond => {
                 uprintln!(
                     tx,
-                    "Received an EDHOC message while waiting for message_1"
+                    "Received an EDHOC message while waiting for message_2"
                 );
-                // Setup
-                self.initialize();
+                // Take out the receiver, which we know exists at this point
+                let msg2_receiver = self.msg2_receiver.take().unwrap();
 
-                // Take out the receiver (which we know exists at this point)
-                let msg1_receiver = self.msg1_receiver.take().unwrap();
-                // Try to deal with message_1
-                let msg2_sender = match msg1_receiver.handle_message_1(msg) {
-                    Err(OwnError(b)) => {
-                        uprintln!(
-                            tx,
-                            "Ran into an issue dealing with the message"
-                        );
-                        // Since there's a problem, send an error message
+                // This is a case where we could receive an error message (just
+                // abort then), or cause an error (send it to the peer)
+                let (_v_kid, msg2_verifier) = match msg2_receiver
+                    .extract_peer_kid(msg)
+                {
+                    Err(OwnOrPeerError::PeerError(s)) => {
+                        panic!("Received error msg: {}", s)
+                    }
+                    Err(OwnOrPeerError::OwnError(b)) => {
+                        uprintln!(tx, "Ran into an issue dealing with msg_2");
                         return Some(b);
                     }
                     Ok(val) => val,
                 };
-                // If that went well, produce message_2
-                let (msg2_bytes, msg3_receiver) = match msg2_sender
-                    .generate_message_2()
+                let msg3_sender = match msg2_verifier
+                    .verify_message_2(&self.auth_peer)
                 {
                     Err(OwnError(b)) => {
-                        uprintln!(tx, "Ran into an issue producing message_2");
+                        uprintln!(tx, "Ran into an issue verifying message_2");
                         return Some(b);
                     }
                     Ok(val) => val,
                 };
-                // Store the state and advance our progress
-                self.msg3_receiver = Some(msg3_receiver);
-                self.state = State::WaitingForFourth;
-                uprintln!(tx, "Successfully built message_2");
-
-                // Return message_2 to be sent
-                Some(msg2_bytes)
-            }
-            State::WaitingForFourth => {
-                uprintln!(
-                    tx,
-                    "Received an EDHOC message while waiting for message_3"
-                );
-                // Retrieve our state (which we know exists at this point)
-                let msg3_receiver = self.msg3_receiver.take().unwrap();
-                let (_u_kid, msg3_verifier) =
-                    match msg3_receiver.extract_peer_kid(msg) {
-                        Err(OwnOrPeerError::PeerError(s)) => {
-                            uprintln!(tx, "Received an EDHOC error: {}", s);
-                            self.state = State::WaitingForSecond;
-                            return None;
-                        }
-                        Err(OwnOrPeerError::OwnError(b)) => {
+                let (msg3_bytes, master_secret, master_salt) =
+                    match msg3_sender.generate_message_3() {
+                        Err(OwnError(b)) => {
                             uprintln!(
                                 tx,
-                                "Ran into an issue dealing with the message"
+                                "Ran into an issue generating message_3"
                             );
-                            self.state = State::WaitingForSecond;
                             return Some(b);
                         }
                         Ok(val) => val,
                     };
-                let (master_secret, master_salt) = match msg3_verifier
-                    .verify_message_3(&self.auth_peer)
-                {
-                    Err(OwnError(b)) => {
-                        uprintln!(tx, "Ran into an issue verifying message_3");
-                        self.state = State::WaitingForSecond;
-                        return Some(b);
-                    }
-                    Ok(val) => val,
-                };
-
-                self.state = State::Complete;
                 uprintln!(
                     tx,
                     "Successfully derived the master secret and salt\r\n\
@@ -144,12 +149,24 @@ impl EdhocHandler {
                     master_secret,
                     master_salt
                 );
+                // Store the state and advance our progress
                 self.master_secret = Some(master_secret);
                 self.master_salt = Some(master_salt);
+                self.state = State::WaitingForAck;
+                uprintln!(tx, "Successfully built message_3");
 
-                // Return an empty message, which results in the final ACK to
-                // the client
-                Some(vec![])
+                // Return message_3 to be sent
+                Some(msg3_bytes)
+            }
+            State::WaitingForAck => {
+                uprintln!(
+                    tx,
+                    "Received an EDHOC message while waiting for ACK"
+                );
+                self.state = State::Complete;
+
+                // No response necessary
+                None
             }
             State::Complete => {
                 uprintln!(
@@ -168,9 +185,7 @@ impl EdhocHandler {
 
     /// Returns the negotiated master secret & salt, resetting the EDHOC state.
     pub fn take_params(&mut self) -> Option<(Vec<u8>, Vec<u8>)> {
-        if self.state == State::Complete {
-            // Reset the state
-            self.state = State::WaitingForSecond;
+        if self.state == State::Complete && self.master_secret.is_some() {
             // Take and return the derived context
             Some((
                 self.master_secret.take().unwrap(),
@@ -179,29 +194,5 @@ impl EdhocHandler {
         } else {
             None
         }
-    }
-
-    /// Initializes the handler to its original state.
-    fn initialize(&mut self) {
-        // "Generate" an ECDH key pair (this is hardcoded, but MUST be
-        // ephemeral and generated randomly)
-        let eph = [
-            0xD4, 0xD8, 0x1A, 0xBA, 0xFA, 0xD9, 0x08, 0xA0, 0xCC, 0xEF, 0xEF,
-            0x5A, 0xD6, 0xB0, 0x5D, 0x50, 0x27, 0x02, 0xF1, 0xC1, 0x6F, 0x23,
-            0x2C, 0x25, 0x92, 0x93, 0x09, 0xAC, 0x44, 0x1B, 0x95, 0x8E,
-        ];
-        // Choose a connection identifier (also hardcoded, could be
-        // chosen by user or generated randomly)
-        let c_v = [0xC3].to_vec();
-
-        // Initialize what we need to handle messages
-        let msg1_receiver = PartyV::new(
-            c_v,
-            eph,
-            &self.auth_priv,
-            &self.auth_pub,
-            self.kid.clone(),
-        );
-        self.msg1_receiver = Some(msg1_receiver);
     }
 }
