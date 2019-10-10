@@ -12,10 +12,10 @@ use stm32f4xx_hal::{serial::Tx, stm32::USART1};
 use crate::{uprint, uprintln};
 
 /// The state in which the EDHOC exchange is.
-#[derive(PartialEq)]
-enum State {
-    WaitingForFirst,
-    WaitingForThird,
+#[derive(Clone, Copy, PartialEq)]
+pub enum State {
+    WaitingForSecond,
+    WaitingForFourth,
     Complete,
 }
 
@@ -45,7 +45,7 @@ impl EdhocHandler {
             auth_pub,
             kid,
             auth_peer,
-            state: State::WaitingForFirst,
+            state: State::WaitingForSecond,
             msg1_receiver: None,
             msg3_receiver: None,
             master_secret: None,
@@ -60,7 +60,7 @@ impl EdhocHandler {
         msg: Vec<u8>,
     ) -> Option<Vec<u8>> {
         match self.state {
-            State::WaitingForFirst => {
+            State::WaitingForSecond => {
                 uprintln!(
                     tx,
                     "Received an EDHOC message while waiting for message_1"
@@ -94,13 +94,13 @@ impl EdhocHandler {
                 };
                 // Store the state and advance our progress
                 self.msg3_receiver = Some(msg3_receiver);
-                self.state = State::WaitingForThird;
+                self.state = State::WaitingForFourth;
                 uprintln!(tx, "Successfully built message_2");
 
                 // Return message_2 to be sent
                 Some(msg2_bytes)
             }
-            State::WaitingForThird => {
+            State::WaitingForFourth => {
                 uprintln!(
                     tx,
                     "Received an EDHOC message while waiting for message_3"
@@ -111,7 +111,7 @@ impl EdhocHandler {
                     match msg3_receiver.extract_peer_kid(msg) {
                         Err(OwnOrPeerError::PeerError(s)) => {
                             uprintln!(tx, "Received an EDHOC error: {}", s);
-                            self.state = State::WaitingForFirst;
+                            self.state = State::WaitingForSecond;
                             return None;
                         }
                         Err(OwnOrPeerError::OwnError(b)) => {
@@ -119,7 +119,7 @@ impl EdhocHandler {
                                 tx,
                                 "Ran into an issue dealing with the message"
                             );
-                            self.state = State::WaitingForFirst;
+                            self.state = State::WaitingForSecond;
                             return Some(b);
                         }
                         Ok(val) => val,
@@ -129,7 +129,7 @@ impl EdhocHandler {
                 {
                     Err(OwnError(b)) => {
                         uprintln!(tx, "Ran into an issue verifying message_3");
-                        self.state = State::WaitingForFirst;
+                        self.state = State::WaitingForSecond;
                         return Some(b);
                     }
                     Ok(val) => val,
@@ -161,11 +161,16 @@ impl EdhocHandler {
         }
     }
 
+    /// Returns the current state.
+    pub fn get_state(&self) -> State {
+        self.state
+    }
+
     /// Returns the negotiated master secret & salt, resetting the EDHOC state.
     pub fn take_params(&mut self) -> Option<(Vec<u8>, Vec<u8>)> {
         if self.state == State::Complete {
             // Reset the state
-            self.state = State::WaitingForFirst;
+            self.state = State::WaitingForSecond;
             // Take and return the derived context
             Some((
                 self.master_secret.take().unwrap(),
