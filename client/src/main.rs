@@ -29,6 +29,8 @@ static ALLOCATOR: CortexMHeap = CortexMHeap::empty();
 /* Configuration */
 const MAC: mac::Addr = mac::Addr([0x20, 0x18, 0x03, 0x01, 0x00, 0x01]);
 const IP: ipv4::Addr = ipv4::Addr([192, 168, 0, 98]);
+const MAC_SERVER: mac::Addr = mac::Addr([0x20, 0x18, 0x03, 0x01, 0x00, 0x00]);
+const IP_SERVER: ipv4::Addr = ipv4::Addr([192, 168, 0, 99]);
 
 /* Constants */
 const KB: u16 = 1024; // bytes
@@ -130,6 +132,33 @@ fn main() -> ! {
     // And finally this is the layer for OSCORE
     let mut oscore =
         OscoreHandler::new(edhoc, coap, KID.to_vec(), KID_PEER.to_vec());
+
+    // Since we're the client, we need to initiate the whole interaction. We
+    // start by sending the first EDHOC message, everything after that will be
+    // handled in the main receiver loop like in the server. After that, the
+    // client will also respond to any ARP and ICMP packets it receives.
+
+    // Build Ethernet frame from scratch
+    let mut eth = ether::Frame::new(&mut tx_buf[..]);
+    eth.set_destination(MAC_SERVER);
+    eth.set_source(MAC);
+    eth.ipv4(|ip| {
+        // Update the IP header
+        ip.set_source(IP);
+        ip.set_destination(IP_SERVER);
+        ip.udp(|udp| {
+            // Update the UDP header
+            udp.set_source(COAP_PORT);
+            udp.set_destination(COAP_PORT);
+            // Wrap CoAP packet
+            udp.set_payload(&oscore.go(&mut tx).unwrap());
+        });
+    });
+    uprintln!(tx, "Sending the first EDHOC packet");
+    uprintln!(tx, "Tx({})", eth.len());
+    enc28j60
+        .transmit(eth.as_bytes())
+        .expect("Failed transmitting");
 
     loop {
         let len = match enc28j60.receive(rx_buf.as_mut()) {
