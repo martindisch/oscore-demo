@@ -2,158 +2,103 @@
 
 use alloc::vec::Vec;
 use coap_lite::{
-    CoapOption, ContentFormat, MessageClass, MessageType, Packet, ResponseType,
+    CoapOption, ContentFormat, MessageClass, MessageType, Packet, RequestType,
 };
-use core::fmt::Write;
+use core::{fmt::Write, str};
 use stm32f4xx_hal::{serial::Tx, stm32::USART1};
 
-use crate::{edhoc::EdhocHandler, uprint, uprintln};
+use crate::{
+    edhoc::{EdhocHandler, State},
+    uprint, uprintln,
+};
 
 /// Handles CoAP messages.
-pub struct CoapHandler;
+pub struct CoapHandler {
+    message_id: u16,
+    token: u8,
+    oscore_iteration: usize,
+}
 
 impl Default for CoapHandler {
     fn default() -> CoapHandler {
-        CoapHandler
+        CoapHandler {
+            message_id: 100,
+            token: 0,
+            oscore_iteration: 0,
+        }
     }
 }
 
 impl CoapHandler {
     /// Creates a new `CoapHandler`.
     pub fn new() -> CoapHandler {
-        // Since this is an empty struct, the constructor is not necessary, but
-        // it's still here in case that changes.
         Default::default()
     }
 
-    /// Handles a CoAP message and returns a response.
+    /// Handles a CoAP response and returns the next request.
     pub fn handle(
         &mut self,
         tx: &mut Tx<USART1>,
         edhoc: &mut EdhocHandler,
-        req: Packet,
+        res: Packet,
     ) -> Option<Packet> {
-        if let Some(path) = req.get_option(CoapOption::UriPath) {
-            // Copy the linked list of references so we can manipulate it for
-            // easier traversal
-            let mut path = path.clone();
+        match edhoc.get_state() {
+            State::WaitingForSecond => None,
+            State::WaitingForFourth => None,
+            State::Complete => {
+                // OSCORE is already going and we received a response
+                uprintln!(
+                    tx,
+                    "Got response: {}",
+                    str::from_utf8(&res.payload)
+                        .expect("Failed parsing response payload as UTF-8")
+                );
+                // Build a CoAP request to one of the two resources
+                let i = self.oscore_iteration;
+                let coap = if i % 2 == 0 {
+                    self.build_resource_request(b"hello".to_vec(), None)
+                } else {
+                    self.build_resource_request(
+                        b"echo".to_vec(),
+                        Some(format!("Iteration {}", i).as_bytes().to_vec()),
+                    )
+                };
+                self.oscore_iteration += 1;
 
-            if let Some(first) = path.pop_front() {
-                if first == b".well-known" {
-                    if let Some(second) = path.pop_front() {
-                        if second == b"core" {
-                            uprintln!(
-                                tx,
-                                "Request for the /.well-known/core resource"
-                            );
-                            // Response to /.well-known/core
-                            return Some(generate_link_format(
-                                &req,
-                                // About EDHOC: should have a custom ct, but
-                                // since the EDHOC Content-Format is not part
-                                // of the IANA registry yet, we don't know it
-                                b"</hello>;rt=\"test\";ct=0,\
-                                  </echo>;rt=\"echo\";ct=42,\
-                                  </.well-known/edhoc>;rt=\"edhoc\";ct=42"
-                                    .to_vec(),
-                            ));
-                        } else if second == b"edhoc" {
-                            // Response to /.well-known/edhoc
-
-                            // Duplicate the token for later use
-                            let token = req.get_token().clone();
-                            // Get our response from the EDHOC handler
-                            let payload = edhoc.handle(tx, req.payload);
-                            // Do an early return with None if we got that
-                            let payload = payload?;
-
-                            let mut res = Packet::new();
-                            // We acknowledge that we've received the message
-                            res.header.set_type(MessageType::Acknowledgement);
-                            // and send the message ID to confirm this
-                            res.header.message_id = req.header.message_id;
-                            // Use the token to tie response to request
-                            res.set_token(token);
-                            // As per EDHOC spec, we return a 2.04 (Changed)
-                            res.header.code =
-                                MessageClass::Response(ResponseType::Changed);
-                            // Again, there's no EDHOC Content-Format yet
-                            res.set_content_format(
-                                ContentFormat::ApplicationOctetStream,
-                            );
-                            // Finally, pack in our EDHOC message
-                            res.payload = payload;
-
-                            return Some(res);
-                        }
-                    }
-
-                    // Response to /.well-known
-                    return Some(generate_link_format(
-                        &req,
-                        br#"</.well-known/core>;rt="core";ct=40"#.to_vec(),
-                    ));
-                } else if first == b"hello" {
-                    uprintln!(tx, "Request for the /hello resource");
-                    // Response to /hello
-                    return Some(generate_response(
-                        &req,
-                        b"Hello, world!".to_vec(),
-                        ContentFormat::TextPlain,
-                    ));
-                } else if first == b"echo" {
-                    uprintln!(tx, "Request for the /echo resource");
-                    // Response to /echo
-                    let payload = req.payload.clone();
-                    return Some(generate_response(
-                        &req,
-                        payload,
-                        ContentFormat::ApplicationOctetStream,
-                    ));
-                }
+                Some(coap)
             }
         }
-
-        // If we made it here, the requested resource was not found
-        uprintln!(tx, "Requested resource was not found");
-        let mut res = Packet::new();
-        res.header.set_type(MessageType::Acknowledgement);
-        res.header.code = MessageClass::Response(ResponseType::NotFound);
-        res.header.message_id = req.header.message_id;
-        res.set_token(req.get_token().clone());
-        res.set_content_format(ContentFormat::TextPlain);
-        res.payload = b"Not found".to_vec();
-
-        Some(res)
     }
-}
 
-/// Returns a link-format type response with the given payload.
-fn generate_link_format(req: &Packet, payload: Vec<u8>) -> Packet {
-    let mut res = Packet::new();
-    res.header.set_type(MessageType::Acknowledgement);
-    res.header.code = MessageClass::Response(ResponseType::Content);
-    res.header.message_id = req.header.message_id;
-    res.set_token(req.get_token().clone());
-    res.set_content_format(ContentFormat::ApplicationLinkFormat);
-    res.payload = payload;
+    /// Returns a CoAP packet for a GET request to the given resource with
+    /// payload.
+    fn build_resource_request(
+        &mut self,
+        uri_path: Vec<u8>,
+        payload: Option<Vec<u8>>,
+    ) -> Packet {
+        let mut req = Packet::new();
 
-    res
-}
+        // We're not retrying on failure in this demo, but usually you're
+        // sending confirmable messages to achieve reliability
+        req.header.set_type(MessageType::Confirmable);
+        // This message ID should be acknowledged by the server for reliability
+        req.header.message_id = self.message_id;
+        self.message_id = self.message_id.wrapping_add(1);
+        // And the token is used to tie response to request
+        req.set_token(vec![self.token]);
+        self.token = self.token.wrapping_add(1);
+        // Note:
+        // While the F4 has a TRNG on board and we could therefore do random
+        // message IDs and tokens, it's not really important for this demo, so
+        // we just use continuously incrementing ones
+        req.header.code = MessageClass::Request(RequestType::Get);
+        req.set_content_format(ContentFormat::TextPlain);
+        req.add_option(CoapOption::UriPath, uri_path);
+        if let Some(payload) = payload {
+            req.payload = payload;
+        }
 
-/// Returns a "normal" response with a payload and Content-Format.
-fn generate_response(
-    req: &Packet,
-    payload: Vec<u8>,
-    cf: ContentFormat,
-) -> Packet {
-    let mut res = Packet::new();
-    res.header.set_type(MessageType::Acknowledgement);
-    res.header.code = MessageClass::Response(ResponseType::Content);
-    res.header.message_id = req.header.message_id;
-    res.set_token(req.get_token().clone());
-    res.set_content_format(cf);
-    res.payload = payload;
-
-    res
+        req
+    }
 }
