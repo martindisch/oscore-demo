@@ -64,19 +64,8 @@ impl CoapHandler {
                 str::from_utf8(&res.payload)
                     .expect("Failed parsing response payload as UTF-8")
             );
-            // Build a CoAP request to one of the two resources
-            let i = self.oscore_iteration;
-            let coap = if i % 2 == 0 {
-                self.build_resource_request(b"hello".to_vec(), None)
-            } else {
-                self.build_resource_request(
-                    b"echo".to_vec(),
-                    Some(format!("Iteration {}", i).as_bytes().to_vec()),
-                )
-            };
-            self.oscore_iteration += 1;
-
-            Some(coap)
+            // Send the next request
+            Some(self.build_resource_request())
         } else {
             // Get our response from the EDHOC handler
             let payload = edhoc.handle(tx, res.payload);
@@ -113,15 +102,21 @@ impl CoapHandler {
         Some(req)
     }
 
-    /// Returns a CoAP packet for a GET request to the given resource with
-    /// payload.
-    fn build_resource_request(
-        &mut self,
-        uri_path: Vec<u8>,
-        payload: Option<Vec<u8>>,
-    ) -> Packet {
-        let mut req = Packet::new();
+    /// Returns a CoAP packet for a GET request to a resource.
+    pub fn build_resource_request(&mut self) -> Packet {
+        // Build a CoAP request to one of the two resources
+        let i = self.oscore_iteration;
+        let (uri_path, payload) = if i % 2 == 0 {
+            (b"hello".to_vec(), None)
+        } else {
+            (
+                b"echo".to_vec(),
+                Some(format!("Iteration {}", i).as_bytes().to_vec()),
+            )
+        };
+        self.oscore_iteration += 1;
 
+        let mut req = Packet::new();
         // We're not retrying on failure in this demo, but usually you're
         // sending confirmable messages to achieve reliability
         req.header.set_type(MessageType::Confirmable);

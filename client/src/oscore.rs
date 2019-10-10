@@ -34,42 +34,44 @@ impl OscoreHandler {
         }
     }
 
+    /// Initiates everything by creating the first EDHOC message.
+    pub fn go(&mut self, tx: &mut Tx<USART1>) -> Option<Vec<u8>> {
+        let req = self.coap.go(tx, &mut self.edhoc);
+        Some(req?.to_bytes().expect("Error building CoAP bytes"))
+    }
+
     /// Unprotects an OSCORE message if it is one, passes the CoAP to the
-    /// `CoapHandler` and protects the response if necessary.
+    /// `CoapHandler` and protects the request if necessary.
     pub fn handle(
         &mut self,
         tx: &mut Tx<USART1>,
-        req_bytes: &[u8],
+        res_bytes: &[u8],
     ) -> Option<Vec<u8>> {
-        let mut req =
-            Packet::from_bytes(req_bytes).expect("Unable to parse CoAP");
+        let mut res =
+            Packet::from_bytes(res_bytes).expect("Unable to parse CoAP");
         let mut is_oscore = false;
 
-        // Check if the request is OSCORE and we are ready to deal with it
-        if req.get_option(CoapOption::Oscore).is_some()
+        // Check if the response is OSCORE and we are ready to deal with it
+        if res.get_option(CoapOption::Oscore).is_some()
             && self.oscore.is_some()
         {
-            uprintln!(tx, "Unprotecting OSCORE request");
+            uprintln!(tx, "Unprotecting OSCORE response");
             is_oscore = true;
             // Temporarily take the oscore context
             let mut oscore = self.oscore.take().unwrap();
-            // Unprotect the request and replace the original with it
-            req = Packet::from_bytes(
+            // Unprotect the response and replace the original with it
+            res = Packet::from_bytes(
                 &oscore
-                    .unprotect_request(req_bytes)
-                    .expect("Failed unprotecting request"),
+                    .unprotect_response(res_bytes)
+                    .expect("Failed unprotecting response"),
             )
-            .expect("Unable to parse unprotected request");
+            .expect("Unable to parse unprotected response");
             // Put the context back in
             self.oscore = Some(oscore);
         }
 
         // Use CoAP handler to deal with it
-        let mut res = self
-            .coap
-            .handle(tx, &mut self.edhoc, req)?
-            .to_bytes()
-            .expect("Error building CoAP bytes");
+        let mut req = self.coap.handle(tx, &mut self.edhoc, res);
 
         // Check if EDHOC has advanced
         if let Some((master_secret, master_salt)) = self.edhoc.take_params() {
@@ -83,22 +85,29 @@ impl OscoreHandler {
                 )
                 .expect("Failed intializing OSCORE"),
             );
+            is_oscore = true;
+            // Since EDHOC has just completed, our response is currently None.
+            // What we want to do now, is to send the first OSCORE request to
+            // get the whole receive -> send -> repeat cycle going.
+            req = Some(self.coap.build_resource_request());
         }
 
-        // If the exchange is protected with OSCORE, protect the response
+        let mut req = req?.to_bytes().expect("Error building CoAP bytes");
+
+        // If the exchange is protected with OSCORE, protect the request
         if is_oscore {
-            uprintln!(tx, "Protecting OSCORE response");
+            uprintln!(tx, "Protecting OSCORE request");
             // Temporarily take the oscore context
             let mut oscore = self.oscore.take().unwrap();
-            // Protect the response and replace the original with it
-            res = oscore
-                .protect_response(&res, req_bytes, true)
-                .expect("Failed protecting response");
+            // Protect the request and replace the original with it
+            req = oscore
+                .protect_request(&req)
+                .expect("Failed protecting request");
             // Put the context back in
             self.oscore = Some(oscore);
         }
 
-        // Return the bytes of the CoAP response packet
-        Some(res)
+        // Return the bytes of the CoAP request packet
+        Some(req)
     }
 }
