@@ -9,6 +9,7 @@ applies to:
 - alt-stm32f30x-hal, Copyright (c) 2018 Jorge Aparicio
 - coap-lite, Copyright (c) 2019 Martin Disch
 - alloc-cortex-m, Copyright (c) 2016-2018 Jorge Aparicio
+- embedded-hal, Copyright (c) 2017-2018 Jorge Aparicio
 - enc28j60, Copyright (c) 2018 Jorge Aparicio
 - jnet, Copyright (c) 2018 Jorge Aparicio
 - oscore, Copyright (c) 2019 Martin Disch
@@ -42,6 +43,7 @@ applies to:
 - alt-stm32f30x-hal
 - coap-lite
 - alloc-cortex-m
+- embedded-hal
 - enc28j60
 - jnet
 - oscore

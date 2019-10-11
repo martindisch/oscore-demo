@@ -13,8 +13,7 @@ use heapless::FnvIndexMap;
 use jnet::{arp, ether, icmp, ipv4, mac, udp};
 
 use alt_stm32f30x_hal as hal;
-use hal::delay::Delay;
-use hal::prelude::*;
+use hal::{delay::Delay, device::USART1, prelude::*, serial::Tx};
 
 use server::{
     coap::CoapHandler, edhoc::EdhocHandler, led::Leds, oscore::OscoreHandler,
@@ -200,9 +199,7 @@ fn main() -> ! {
 
                     uprintln!(tx, "Asked for us, sending reply");
                     uprintln!(tx, "Tx({})", eth.len());
-                    enc28j60
-                        .transmit(eth.as_bytes())
-                        .expect("Failed transmitting ARP");
+                    reliable_transmit(&mut tx, &mut enc28j60, eth.as_bytes());
                 }
             }
             ether::Type::Ipv4 => {
@@ -261,9 +258,11 @@ fn main() -> ! {
                         leds.spin().expect("Failed advancing led");
                         uprintln!(tx, "ICMP request, responding");
                         uprintln!(tx, "Tx({})", rx_eth.len());
-                        enc28j60
-                            .transmit(rx_eth.as_bytes())
-                            .expect("Failed transmitting ICMP");
+                        reliable_transmit(
+                            &mut tx,
+                            &mut enc28j60,
+                            rx_eth.as_bytes(),
+                        );
                     }
                     ipv4::Protocol::Udp => {
                         let parsed = udp::Packet::parse(rx_ip.payload());
@@ -316,14 +315,43 @@ fn main() -> ! {
                         leds.spin().expect("Failed advancing led");
                         uprintln!(tx, "Responding with CoAP packet");
                         uprintln!(tx, "Tx({})", eth.len());
-                        enc28j60
-                            .transmit(eth.as_bytes())
-                            .expect("Failed transmitting UDP");
+                        reliable_transmit(
+                            &mut tx,
+                            &mut enc28j60,
+                            eth.as_bytes(),
+                        );
                     }
                     _ => {}
                 }
             }
             _ => {}
+        }
+    }
+}
+
+/// Retries sending until no error is returned.
+#[allow(deprecated)]
+fn reliable_transmit<E, SPI, NCS>(
+    tx: &mut Tx<USART1>,
+    enc28j60: &mut Enc28j60<
+        SPI,
+        NCS,
+        enc28j60::Unconnected,
+        enc28j60::Unconnected,
+    >,
+    bytes: &[u8],
+) where
+    E: core::fmt::Debug,
+    SPI: embedded_hal::blocking::spi::Transfer<u8, Error = E>
+        + embedded_hal::blocking::spi::Write<u8, Error = E>,
+    NCS: embedded_hal::digital::OutputPin,
+{
+    loop {
+        match enc28j60.transmit(bytes) {
+            Ok(()) => break,
+            Err(e) => {
+                uprintln!(tx, "{:?}", e);
+            }
         }
     }
 }

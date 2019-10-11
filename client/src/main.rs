@@ -12,10 +12,14 @@ use heapless::consts::*;
 use heapless::FnvIndexMap;
 use jnet::{arp, ether, icmp, ipv4, mac, udp};
 
-use hal::delay::Delay;
-use hal::prelude::*;
-use hal::serial::{config::Config, Serial};
-use hal::spi::Spi;
+use hal::{
+    delay::Delay,
+    prelude::*,
+    serial::Tx,
+    serial::{config::Config, Serial},
+    spi::Spi,
+    stm32::USART1,
+};
 use stm32f4xx_hal as hal;
 
 use client::{
@@ -156,9 +160,7 @@ fn main() -> ! {
     });
     uprintln!(tx, "Sending the first EDHOC packet");
     uprintln!(tx, "Tx({})", eth.len());
-    enc28j60
-        .transmit(eth.as_bytes())
-        .expect("Failed transmitting");
+    reliable_transmit(&mut tx, &mut enc28j60, eth.as_bytes());
 
     loop {
         let len = match enc28j60.receive(rx_buf.as_mut()) {
@@ -237,9 +239,7 @@ fn main() -> ! {
 
                     uprintln!(tx, "Asked for us, sending reply");
                     uprintln!(tx, "Tx({})", eth.len());
-                    enc28j60
-                        .transmit(eth.as_bytes())
-                        .expect("Failed transmitting ARP");
+                    reliable_transmit(&mut tx, &mut enc28j60, eth.as_bytes());
                 }
             }
             ether::Type::Ipv4 => {
@@ -298,9 +298,11 @@ fn main() -> ! {
                         leds.spin();
                         uprintln!(tx, "ICMP request, responding");
                         uprintln!(tx, "Tx({})", rx_eth.len());
-                        enc28j60
-                            .transmit(rx_eth.as_bytes())
-                            .expect("Failed transmitting ICMP");
+                        reliable_transmit(
+                            &mut tx,
+                            &mut enc28j60,
+                            rx_eth.as_bytes(),
+                        );
                     }
                     ipv4::Protocol::Udp => {
                         let parsed = udp::Packet::parse(rx_ip.payload());
@@ -353,14 +355,43 @@ fn main() -> ! {
                         leds.spin();
                         uprintln!(tx, "Responding with CoAP packet");
                         uprintln!(tx, "Tx({})", eth.len());
-                        enc28j60
-                            .transmit(eth.as_bytes())
-                            .expect("Failed transmitting UDP");
+                        reliable_transmit(
+                            &mut tx,
+                            &mut enc28j60,
+                            eth.as_bytes(),
+                        );
                     }
                     _ => {}
                 }
             }
             _ => {}
+        }
+    }
+}
+
+/// Retries sending until no error is returned.
+#[allow(deprecated)]
+fn reliable_transmit<E, SPI, NCS>(
+    tx: &mut Tx<USART1>,
+    enc28j60: &mut Enc28j60<
+        SPI,
+        NCS,
+        enc28j60::Unconnected,
+        enc28j60::Unconnected,
+    >,
+    bytes: &[u8],
+) where
+    E: core::fmt::Debug,
+    SPI: embedded_hal::blocking::spi::Transfer<u8, Error = E>
+        + embedded_hal::blocking::spi::Write<u8, Error = E>,
+    NCS: embedded_hal::digital::OutputPin,
+{
+    loop {
+        match enc28j60.transmit(bytes) {
+            Ok(()) => break,
+            Err(e) => {
+                uprintln!(tx, "{:?}", e);
+            }
         }
     }
 }

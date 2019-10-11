@@ -13,10 +13,11 @@ heapless = "0.5.1"
 alt-stm32f30x-hal = { version = "0.22.1", features = ["stm32f303", "rt"] }
 coap-lite = { version = "0.3.0", default-features = false }
 alloc-cortex-m = "0.3.5"
+embedded-hal = "0.2.3"
 
 [dependencies.enc28j60]
 git = "https://github.com/martindisch/enc28j60"
-rev = "6430a350f0785d3d93a4a2e8b23276a79db734b7"
+rev = "faeabb8325d96a08cd2be5d40e110ca89e0f2efb"
 
 [dependencies.jnet]
 git = "https://github.com/japaric/jnet"
