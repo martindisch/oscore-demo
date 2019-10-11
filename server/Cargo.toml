@@ -16,7 +16,7 @@ alloc-cortex-m = "0.3.5"
 
 [dependencies.enc28j60]
 git = "https://github.com/martindisch/enc28j60"
-rev = "8b1a38da6f1ea48099c4f4b7ea2dad3df2123257"
+rev = "6430a350f0785d3d93a4a2e8b23276a79db734b7"
 
 [dependencies.jnet]
 git = "https://github.com/japaric/jnet"
