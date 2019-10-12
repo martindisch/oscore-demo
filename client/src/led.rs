@@ -3,7 +3,7 @@
 // We need this because stm32f4xx_hal uses the deprecated traits
 #![allow(deprecated)]
 
-use hal::gpio::gpiod::{self, PD, PD12, PD13, PD14, PD15};
+use hal::gpio::gpiod::{PD, PD12, PD13, PD14, PD15};
 use hal::gpio::{Output, PushPull};
 use hal::prelude::*;
 use stm32f4xx_hal as hal;
@@ -40,11 +40,16 @@ pub struct Leds {
 
 impl Leds {
     /// Initializes all the user LEDs.
-    pub fn new(gpiod: gpiod::Parts) -> Self {
-        let top = gpiod.pd12.into_push_pull_output();
-        let left = gpiod.pd13.into_push_pull_output();
-        let right = gpiod.pd14.into_push_pull_output();
-        let bottom = gpiod.pd15.into_push_pull_output();
+    pub fn new(
+        pd12: PD12<Output<PushPull>>,
+        pd13: PD13<Output<PushPull>>,
+        pd14: PD14<Output<PushPull>>,
+        pd15: PD15<Output<PushPull>>,
+    ) -> Self {
+        let top = pd12;
+        let left = pd13;
+        let right = pd14;
+        let bottom = pd15;
 
         Leds {
             curr: 0,
