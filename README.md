@@ -29,6 +29,15 @@ SCK         PB3
 CS          PA15
 ```
 
+To use USART instead of Ethernet (pass `--features usart` to `cargo run`):
+```
+STM32F303   STM32F407
+---------   ---------
+PD5 (TX)    PD6 (RX)
+PD6 (RX)    PD5 (TX)
+GND         GND
+```
+
 And for getting serial debug output (using the SparkFun FTDI Basic Breakout as
 USB to Serial IC):
 ```

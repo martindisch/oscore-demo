@@ -7,20 +7,23 @@ extern crate panic_semihosting;
 use alloc_cortex_m::CortexMHeap;
 use core::fmt::Write;
 use cortex_m_rt::entry;
-use enc28j60::Enc28j60;
 use heapless::consts::*;
 use heapless::FnvIndexMap;
 use jnet::{arp, ether, icmp, ipv4, mac, udp};
 
 use hal::{
-    delay::Delay,
     prelude::*,
-    serial::Tx,
     serial::{config::Config, Serial},
-    spi::Spi,
-    stm32::USART1,
 };
 use stm32f4xx_hal as hal;
+
+#[cfg(feature = "usart")]
+use client::usart;
+#[cfg(not(feature = "usart"))]
+use {
+    enc28j60::Enc28j60,
+    hal::{delay::Delay, serial::Tx, spi::Spi, stm32::USART1},
+};
 
 use client::{
     coap::CoapHandler, edhoc::EdhocHandler, led::Leds, oscore::OscoreHandler,
@@ -71,12 +74,15 @@ fn main() -> ! {
     let size = 10 * KB as usize;
     unsafe { ALLOCATOR.init(start, size) }
 
+    #[cfg(not(feature = "usart"))]
     let cp = cortex_m::Peripherals::take().expect("Failed taking cp");
     let dp = hal::stm32::Peripherals::take().expect("Failed taking dp");
 
     let rcc = dp.RCC.constrain();
     let gpiob = dp.GPIOB.split();
     let clocks = rcc.cfgr.freeze();
+    #[cfg(not(feature = "usart"))]
+    let mut delay = Delay::new(cp.SYST, clocks);
 
     // USART1
     let pin_tx = gpiob.pb6.into_alternate_af7();
@@ -85,40 +91,58 @@ fn main() -> ! {
     let serial = Serial::usart1(dp.USART1, (pin_tx, pin_rx), ser_conf, clocks)
         .expect("Failed initializing USART1");
     let (mut tx, mut _rx) = serial.split();
-    uprintln!(tx, "Basic initialization done");
 
     // LEDs
     let gpiod = dp.GPIOD.split();
-    let mut leds = Leds::new(gpiod);
+    let pd12 = gpiod.pd12.into_push_pull_output();
+    let pd13 = gpiod.pd13.into_push_pull_output();
+    let pd14 = gpiod.pd14.into_push_pull_output();
+    let pd15 = gpiod.pd15.into_push_pull_output();
+    let mut leds = Leds::new(pd12, pd13, pd14, pd15);
 
-    // SPI
-    let gpioa = dp.GPIOA.split();
-    let mut ncs = gpioa.pa15.into_push_pull_output();
-    #[allow(deprecated)]
-    ncs.set_high();
-    let sck = gpiob.pb3.into_alternate_af5();
-    let miso = gpiob.pb4.into_alternate_af5();
-    let mosi = gpiob.pb5.into_alternate_af5();
-    let spi = Spi::spi1(
-        dp.SPI1,
-        (sck, miso, mosi),
-        enc28j60::MODE,
-        1.mhz().into(),
-        clocks,
-    );
+    uprintln!(tx, "Basic initialization done");
 
-    // ENC28J60
-    let mut delay = Delay::new(cp.SYST, clocks);
-    let mut enc28j60 = Enc28j60::new(
-        spi,
-        ncs,
-        enc28j60::Unconnected,
-        enc28j60::Unconnected,
-        &mut delay,
-        6 * KB,
-        MAC.0,
-    )
-    .expect("Failed initializing driver");
+    #[cfg(not(feature = "usart"))]
+    let mut enc28j60 = {
+        // SPI
+        let gpioa = dp.GPIOA.split();
+        let mut ncs = gpioa.pa15.into_push_pull_output();
+        #[allow(deprecated)]
+        ncs.set_high();
+        let sck = gpiob.pb3.into_alternate_af5();
+        let miso = gpiob.pb4.into_alternate_af5();
+        let mosi = gpiob.pb5.into_alternate_af5();
+        let spi = Spi::spi1(
+            dp.SPI1,
+            (sck, miso, mosi),
+            enc28j60::MODE,
+            1.mhz().into(),
+            clocks,
+        );
+
+        // ENC28J60
+        Enc28j60::new(
+            spi,
+            ncs,
+            enc28j60::Unconnected,
+            enc28j60::Unconnected,
+            &mut delay,
+            6 * KB,
+            MAC.0,
+        )
+        .expect("Failed initializing driver")
+    };
+    #[cfg(feature = "usart")]
+    let (mut tx2, mut rx2) = {
+        let pin_tx = gpiod.pd5.into_alternate_af7();
+        let pin_rx = gpiod.pd6.into_alternate_af7();
+        let ser_conf = Config::default().baudrate(115_200.bps());
+        let serial2 =
+            Serial::usart2(dp.USART2, (pin_tx, pin_rx), ser_conf, clocks)
+                .expect("Failed initializing USART2");
+        // serial2.listen(serial::Event::Rxne);
+        serial2.split()
+    };
 
     uprintln!(tx, "Complete initialization done");
 
@@ -160,9 +184,13 @@ fn main() -> ! {
     });
     uprintln!(tx, "Sending the first EDHOC packet");
     uprintln!(tx, "Tx({})", eth.len());
+    #[cfg(not(feature = "usart"))]
     reliable_transmit(&mut tx, &mut enc28j60, eth.as_bytes());
+    #[cfg(feature = "usart")]
+    usart::send(&mut tx2, eth.as_bytes());
 
     loop {
+        #[cfg(not(feature = "usart"))]
         let len = match enc28j60.receive(rx_buf.as_mut()) {
             Ok(len) => len,
             Err(err) => {
@@ -183,6 +211,8 @@ fn main() -> ! {
                 continue;
             }
         };
+        #[cfg(feature = "usart")]
+        let len = usart::receive(&mut rx2, rx_buf.as_mut());
 
         let parsed = ether::Frame::parse(&mut rx_buf[..len as usize]);
         if parsed.is_err() {
@@ -239,7 +269,10 @@ fn main() -> ! {
 
                     uprintln!(tx, "Asked for us, sending reply");
                     uprintln!(tx, "Tx({})", eth.len());
+                    #[cfg(not(feature = "usart"))]
                     reliable_transmit(&mut tx, &mut enc28j60, eth.as_bytes());
+                    #[cfg(feature = "usart")]
+                    usart::send(&mut tx2, eth.as_bytes());
                 }
             }
             ether::Type::Ipv4 => {
@@ -298,11 +331,14 @@ fn main() -> ! {
                         leds.spin();
                         uprintln!(tx, "ICMP request, responding");
                         uprintln!(tx, "Tx({})", rx_eth.len());
+                        #[cfg(not(feature = "usart"))]
                         reliable_transmit(
                             &mut tx,
                             &mut enc28j60,
                             rx_eth.as_bytes(),
                         );
+                        #[cfg(feature = "usart")]
+                        usart::send(&mut tx2, rx_eth.as_bytes());
                     }
                     ipv4::Protocol::Udp => {
                         let parsed = udp::Packet::parse(rx_ip.payload());
@@ -355,11 +391,14 @@ fn main() -> ! {
                         leds.spin();
                         uprintln!(tx, "Responding with CoAP packet");
                         uprintln!(tx, "Tx({})", eth.len());
+                        #[cfg(not(feature = "usart"))]
                         reliable_transmit(
                             &mut tx,
                             &mut enc28j60,
                             eth.as_bytes(),
                         );
+                        #[cfg(feature = "usart")]
+                        usart::send(&mut tx2, eth.as_bytes());
                     }
                     _ => {}
                 }
@@ -371,6 +410,7 @@ fn main() -> ! {
 
 /// Retries sending until no error is returned.
 #[allow(deprecated)]
+#[cfg(not(feature = "usart"))]
 fn reliable_transmit<E, SPI, NCS>(
     tx: &mut Tx<USART1>,
     enc28j60: &mut Enc28j60<

@@ -624,6 +624,7 @@ dependencies = [
  "enc28j60 0.2.1 (git+https://github.com/martindisch/enc28j60?rev=faeabb8325d96a08cd2be5d40e110ca89e0f2efb)",
  "heapless 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "jnet 0.1.0 (git+https://github.com/japaric/jnet?rev=b5bd70cb998b1e01236f6b07ebc516a0359fde3d)",
+ "nb 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "oscore 0.1.0 (git+https://github.com/martindisch/oscore?rev=8db91495e501468315cd824e9524a364c03655bd)",
  "panic-semihosting 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
 ]

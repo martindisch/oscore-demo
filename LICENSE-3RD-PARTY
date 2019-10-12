@@ -10,6 +10,7 @@ applies to:
 - coap-lite, Copyright (c) 2019 Martin Disch
 - alloc-cortex-m, Copyright (c) 2016-2018 Jorge Aparicio
 - embedded-hal, Copyright (c) 2017-2018 Jorge Aparicio
+- nb, Copyright (c) 2017 Jorge Aparicio
 - enc28j60, Copyright (c) 2018 Jorge Aparicio
 - jnet, Copyright (c) 2018 Jorge Aparicio
 - oscore, Copyright (c) 2019 Martin Disch
@@ -44,6 +45,7 @@ applies to:
 - coap-lite
 - alloc-cortex-m
 - embedded-hal
+- nb
 - enc28j60
 - jnet
 - oscore
