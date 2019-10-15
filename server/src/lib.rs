@@ -6,6 +6,4 @@ extern crate alloc;
 pub mod coap;
 pub mod edhoc;
 pub mod led;
-mod macros;
 pub mod oscore;
-pub mod usart;

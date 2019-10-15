@@ -172,6 +172,7 @@ dependencies = [
  "oscore 0.1.0 (git+https://github.com/martindisch/oscore?rev=8db91495e501468315cd824e9524a364c03655bd)",
  "panic-semihosting 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "stm32f4xx-hal 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "util 0.1.0",
 ]
 
 [[package]]
@@ -645,6 +646,7 @@ dependencies = [
  "nb 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "oscore 0.1.0 (git+https://github.com/martindisch/oscore?rev=8db91495e501468315cd824e9524a364c03655bd)",
  "panic-semihosting 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "util 0.1.0",
 ]
 
 [[package]]
@@ -754,6 +756,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 name = "unicode-xid"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "util"
+version = "0.1.0"
+dependencies = [
+ "embedded-hal 0.2.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "nb 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+]
 
 [[package]]
 name = "vcell"

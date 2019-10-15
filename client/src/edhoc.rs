@@ -8,8 +8,7 @@ use oscore::edhoc::{
     PartyU,
 };
 use stm32f4xx_hal::{serial::Tx, stm32::USART1};
-
-use crate::{uprint, uprintln};
+use util::{uprint, uprintln};
 
 /// The state in which the EDHOC exchange is.
 #[derive(Clone, Copy, PartialEq)]

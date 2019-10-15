@@ -6,11 +6,9 @@ use coap_lite::{
 };
 use core::{fmt::Write, str};
 use stm32f4xx_hal::{serial::Tx, stm32::USART1};
+use util::{uprint, uprintln};
 
-use crate::{
-    edhoc::{EdhocHandler, State},
-    uprint, uprintln,
-};
+use crate::edhoc::{EdhocHandler, State};
 
 /// Handles CoAP messages.
 pub struct CoapHandler {

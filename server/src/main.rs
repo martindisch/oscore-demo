@@ -10,12 +10,13 @@ use cortex_m_rt::entry;
 use heapless::consts::*;
 use heapless::FnvIndexMap;
 use jnet::{arp, ether, icmp, ipv4, mac, udp};
+use util::{uprint, uprintln};
 
 use alt_stm32f30x_hal as hal;
 use hal::prelude::*;
 
 #[cfg(feature = "usart")]
-use server::usart;
+use util::usart;
 #[cfg(not(feature = "usart"))]
 use {
     enc28j60::Enc28j60,
@@ -24,7 +25,6 @@ use {
 
 use server::{
     coap::CoapHandler, edhoc::EdhocHandler, led::Leds, oscore::OscoreHandler,
-    uprint, uprintln,
 };
 
 #[global_allocator]

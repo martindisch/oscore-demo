@@ -5,8 +5,9 @@ use alt_stm32f30x_hal::{device::USART1, serial::Tx};
 use coap_lite::{CoapOption, Packet};
 use core::fmt::Write;
 use oscore::oscore::SecurityContext;
+use util::{uprint, uprintln};
 
-use crate::{coap::CoapHandler, edhoc::EdhocHandler, uprint, uprintln};
+use crate::{coap::CoapHandler, edhoc::EdhocHandler};
 
 /// Unprotects and protects OSCORE message and invokes `CoapHandler`.
 pub struct OscoreHandler {

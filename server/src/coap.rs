@@ -6,8 +6,9 @@ use coap_lite::{
     CoapOption, ContentFormat, MessageClass, MessageType, Packet, ResponseType,
 };
 use core::fmt::Write;
+use util::{uprint, uprintln};
 
-use crate::{edhoc::EdhocHandler, uprint, uprintln};
+use crate::edhoc::EdhocHandler;
 
 /// Handles CoAP messages.
 pub struct CoapHandler;

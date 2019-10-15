@@ -8,8 +8,7 @@ use oscore::edhoc::{
     error::{OwnError, OwnOrPeerError},
     PartyV,
 };
-
-use crate::{uprint, uprintln};
+use util::{uprint, uprintln};
 
 /// The state in which the EDHOC exchange is.
 #[derive(PartialEq)]
