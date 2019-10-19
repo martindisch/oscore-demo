@@ -7,23 +7,17 @@ extern crate panic_semihosting;
 use alloc_cortex_m::CortexMHeap;
 use core::fmt::Write;
 use cortex_m_rt::entry;
-use heapless::consts::*;
-use heapless::FnvIndexMap;
-use jnet::{arp, ether, icmp, ipv4, mac, udp};
-use util::{uprint, uprintln};
-
-use hal::{
+use embedded_hal::spi::{Mode, Phase, Polarity};
+use stm32f4xx_hal::{
     prelude::*,
     serial::{config::Config, Serial},
+    spi::Spi,
+    stm32,
 };
-use stm32f4xx_hal as hal;
-
-#[cfg(feature = "usart")]
-use util::usart;
-#[cfg(not(feature = "usart"))]
-use {
-    enc28j60::Enc28j60,
-    hal::{delay::Delay, serial::Tx, spi::Spi, stm32::USART1},
+use util::{uprint, uprintln};
+use w5500::{
+    ArpResponses, ConnectionType, IntoUdpSocket, IpAddress, MacAddress,
+    OnPingRequest, OnWakeOnLan, Socket, Udp, W5500,
 };
 
 use client::{
@@ -32,16 +26,6 @@ use client::{
 
 #[global_allocator]
 static ALLOCATOR: CortexMHeap = CortexMHeap::empty();
-
-/* Configuration */
-const MAC: mac::Addr = mac::Addr([0x20, 0x18, 0x03, 0x01, 0x00, 0x01]);
-const IP: ipv4::Addr = ipv4::Addr([192, 168, 0, 98]);
-const MAC_SERVER: mac::Addr = mac::Addr([0x20, 0x18, 0x03, 0x01, 0x00, 0x00]);
-const IP_SERVER: ipv4::Addr = ipv4::Addr([192, 168, 0, 99]);
-
-/* Constants */
-const KB: u16 = 1024; // bytes
-const COAP_PORT: u16 = 5683;
 
 /* EDHOC configuration */
 // Private authentication key
@@ -69,20 +53,21 @@ const KID_PEER: [u8; 1] = [0xA3];
 
 #[entry]
 fn main() -> ! {
+    /* Network configuration */
+    let own_mac = MacAddress::new(0x20, 0x18, 0x03, 0x01, 0x00, 0x01);
+    let own_ip = IpAddress::new(192, 168, 0, 98);
+    let peer_ip = IpAddress::new(192, 168, 0, 99);
+    let coap_port = 5683;
+
     // Initialize the allocator BEFORE you use it
     let start = cortex_m_rt::heap_start() as usize;
-    let size = 10 * KB as usize;
+    let size = 10 * 1024 as usize;
     unsafe { ALLOCATOR.init(start, size) }
 
-    #[cfg(not(feature = "usart"))]
-    let cp = cortex_m::Peripherals::take().expect("Failed taking cp");
-    let dp = hal::stm32::Peripherals::take().expect("Failed taking dp");
-
+    let dp = stm32::Peripherals::take().expect("Failed taking dp");
     let rcc = dp.RCC.constrain();
     let gpiob = dp.GPIOB.split();
     let clocks = rcc.cfgr.freeze();
-    #[cfg(not(feature = "usart"))]
-    let mut delay = Delay::new(cp.SYST, clocks);
 
     // USART1
     let pin_tx = gpiob.pb6.into_alternate_af7();
@@ -102,55 +87,59 @@ fn main() -> ! {
 
     uprintln!(tx, "Basic initialization done");
 
-    #[cfg(not(feature = "usart"))]
-    let mut enc28j60 = {
-        // SPI
-        let gpioa = dp.GPIOA.split();
-        let mut ncs = gpioa.pa15.into_push_pull_output();
-        #[allow(deprecated)]
-        ncs.set_high();
-        let sck = gpiob.pb3.into_alternate_af5();
-        let miso = gpiob.pb4.into_alternate_af5();
-        let mosi = gpiob.pb5.into_alternate_af5();
-        let spi = Spi::spi1(
-            dp.SPI1,
-            (sck, miso, mosi),
-            enc28j60::MODE,
-            1.mhz().into(),
-            clocks,
-        );
+    // SPI
+    let gpioa = dp.GPIOA.split();
+    let mut ncs = gpioa.pa15.into_push_pull_output();
+    let sck = gpiob.pb3.into_alternate_af5();
+    let miso = gpiob.pb4.into_alternate_af5();
+    let mosi = gpiob.pb5.into_alternate_af5();
+    let spi_mode = Mode {
+        phase: Phase::CaptureOnFirstTransition,
+        polarity: Polarity::IdleLow,
+    };
+    let mut spi = Spi::spi1(
+        dp.SPI1,
+        (sck, miso, mosi),
+        spi_mode,
+        1.mhz().into(),
+        clocks,
+    );
 
-        // ENC28J60
-        Enc28j60::new(
-            spi,
-            ncs,
-            enc28j60::Unconnected,
-            enc28j60::Unconnected,
-            &mut delay,
-            6 * KB,
-            MAC.0,
-        )
-        .expect("Failed initializing driver")
-    };
-    #[cfg(feature = "usart")]
-    let (mut tx2, mut rx2) = {
-        let pin_tx = gpiod.pd5.into_alternate_af7();
-        let pin_rx = gpiod.pd6.into_alternate_af7();
-        let ser_conf = Config::default().baudrate(115_200.bps());
-        let serial2 =
-            Serial::usart2(dp.USART2, (pin_tx, pin_rx), ser_conf, clocks)
-                .expect("Failed initializing USART2");
-        // serial2.listen(serial::Event::Rxne);
-        serial2.split()
-    };
+    // W5500
+    let mut w5500 = W5500::with_initialisation(
+        &mut ncs,
+        &mut spi,
+        OnWakeOnLan::Ignore,
+        OnPingRequest::Respond,
+        ConnectionType::Ethernet,
+        ArpResponses::Cache,
+    )
+    .expect("Failed initializing W5500");
+
+    let mut active =
+        w5500.activate(&mut spi).expect("Failed activating W5500");
+    active.set_mac(own_mac).expect("Failed setting MAC");
+    active.set_ip(own_ip).expect("Failed setting IP");
+    active
+        .set_subnet(IpAddress::new(255, 255, 255, 0))
+        .expect("Failed setting subnet");
+    active
+        .set_gateway(IpAddress::new(192, 168, 0, 1))
+        .expect("Failed setting gateway");
+
+    let socket0 = active
+        .take_socket(Socket::Socket0)
+        .expect("Failed taking socket");
+    let udp_socket = (&mut active, socket0)
+        .try_into_udp_server_socket(coap_port)
+        .ok()
+        .expect("Failed converting to UDP socket");
+    let mut udp = (&mut active, &udp_socket);
 
     uprintln!(tx, "Complete initialization done");
 
-    // ARP cache
-    let mut cache = FnvIndexMap::<_, _, U16>::new();
-    // Send and receiver buffers
-    let mut rx_buf = [0; 1522];
-    let mut tx_buf = [0; 1522];
+    // Receive buffer
+    let mut buffer = [0; 1522];
 
     // This is doing the EDHOC exchange
     let edhoc =
@@ -166,273 +155,39 @@ fn main() -> ! {
     // handled in the main receiver loop like in the server. After that, the
     // client will also respond to any ARP and ICMP packets it receives.
 
-    // Build Ethernet frame from scratch
-    let mut eth = ether::Frame::new(&mut tx_buf[..]);
-    eth.set_destination(MAC_SERVER);
-    eth.set_source(MAC);
-    eth.ipv4(|ip| {
-        // Update the IP header
-        ip.set_source(IP);
-        ip.set_destination(IP_SERVER);
-        ip.udp(|udp| {
-            // Update the UDP header
-            udp.set_source(COAP_PORT);
-            udp.set_destination(COAP_PORT);
-            // Wrap CoAP packet
-            udp.set_payload(&oscore.go(&mut tx).unwrap());
-        });
-    });
+    let req = oscore.go(&mut tx).unwrap();
     uprintln!(tx, "Sending the first EDHOC packet");
-    uprintln!(tx, "Tx({})", eth.len());
-    #[cfg(not(feature = "usart"))]
-    reliable_transmit(&mut tx, &mut enc28j60, eth.as_bytes());
-    #[cfg(feature = "usart")]
-    usart::send(&mut tx2, eth.as_bytes());
+    uprintln!(tx, "Tx({})", req.len());
+    udp.blocking_send(&peer_ip, coap_port, &req)
+        .expect("Failed sending");
 
     loop {
-        #[cfg(not(feature = "usart"))]
-        let len = match enc28j60.receive(rx_buf.as_mut()) {
-            Ok(len) => len,
+        let (ip, port, len) = match udp.receive(&mut buffer) {
+            Ok(Some(triple)) => triple,
+            Ok(None) => {
+                // Got nothing, continue to busy wait
+                continue;
+            }
             Err(err) => {
-                uprintln!(tx, "Error receiving, resetting device: {:?}", err);
-                // Reclaim resources currently owned by it
-                let (spi, ncs, _, _) = enc28j60.free();
-                // Reinitialize it
-                enc28j60 = Enc28j60::new(
-                    spi,
-                    ncs,
-                    enc28j60::Unconnected,
-                    enc28j60::Unconnected,
-                    &mut delay,
-                    6 * KB,
-                    MAC.0,
-                )
-                .expect("Failed initializing driver");
+                uprintln!(tx, "Error receiving: {:?}", err);
                 continue;
             }
         };
-        #[cfg(feature = "usart")]
-        let len = usart::receive(&mut rx2, rx_buf.as_mut());
 
-        let parsed = ether::Frame::parse(&mut rx_buf[..len as usize]);
-        if parsed.is_err() {
-            // malformed Ethernet frame
-            uprintln!(tx, "Malformed Ethernet frame");
+        uprintln!(tx, "\nRx({})", len);
+        uprintln!(tx, "IP packet from {}", ip);
+
+        // Handle the request
+        let res = oscore.handle(&mut tx, &buffer[..len]);
+        if res.is_none() {
             continue;
         }
-        let mut rx_eth = parsed.unwrap();
+        let res = res.unwrap();
 
-        uprintln!(tx, "\nRx({})", rx_eth.len());
-        let src_mac = rx_eth.get_source();
-        match rx_eth.get_type() {
-            ether::Type::Arp => {
-                let parsed = arp::Packet::parse(rx_eth.payload());
-                if parsed.is_err() {
-                    // malformed ARP packet
-                    uprintln!(tx, "Malformed ARP packet");
-                    continue;
-                }
-                let rx_arp = parsed.unwrap();
-
-                let downcast = rx_arp.downcast();
-                if downcast.is_err() {
-                    // Not a Ethernet/IPv4 ARP packet
-                    uprintln!(tx, "ARP downcast fail");
-                    continue;
-                }
-                let rx_arp = downcast.unwrap();
-
-                let sha = rx_arp.get_sha();
-                let spa = rx_arp.get_spa();
-                uprintln!(tx, "ARP packet from {}", spa);
-
-                if !rx_arp.is_a_probe() {
-                    cache.insert(spa, sha).expect("Cache full");
-                }
-
-                // are they asking for us?
-                if rx_arp.get_oper() == arp::Operation::Request
-                    && rx_arp.get_tpa() == IP
-                {
-                    // Build Ethernet frame from scratch
-                    let mut eth = ether::Frame::new(&mut tx_buf[..]);
-                    eth.set_destination(sha);
-                    eth.set_source(MAC);
-
-                    // Insert an ARP packet
-                    eth.arp(|arp| {
-                        arp.set_oper(arp::Operation::Reply);
-                        arp.set_spa(IP);
-                        arp.set_tha(sha);
-                        arp.set_tpa(spa);
-                    });
-
-                    uprintln!(tx, "Asked for us, sending reply");
-                    uprintln!(tx, "Tx({})", eth.len());
-                    #[cfg(not(feature = "usart"))]
-                    reliable_transmit(&mut tx, &mut enc28j60, eth.as_bytes());
-                    #[cfg(feature = "usart")]
-                    usart::send(&mut tx2, eth.as_bytes());
-                }
-            }
-            ether::Type::Ipv4 => {
-                let parsed = ipv4::Packet::parse(rx_eth.payload_mut());
-                if parsed.is_err() {
-                    // malformed IPv4 packet
-                    uprintln!(tx, "Malformed IPv4 packet");
-                    continue;
-                }
-                let mut rx_ip = parsed.unwrap();
-
-                let src_ip = rx_ip.get_source();
-                uprintln!(tx, "IP packet from {}", src_ip);
-
-                if !src_mac.is_broadcast() {
-                    cache.insert(src_ip, src_mac).expect("Cache full");
-                }
-
-                match rx_ip.get_protocol() {
-                    ipv4::Protocol::Icmp => {
-                        let parsed = icmp::Message::parse(rx_ip.payload_mut());
-                        if parsed.is_err() {
-                            // Malformed ICMP packet
-                            uprintln!(tx, "Malformed ICMP packet");
-                            continue;
-                        }
-                        let icmp = parsed.unwrap();
-
-                        let downcast = icmp.downcast::<icmp::EchoRequest>();
-                        if downcast.is_err() {
-                            uprintln!(tx, "ICMP downcast err");
-                            continue;
-                        }
-                        let request = downcast.unwrap();
-
-                        let lookup = cache.get(&src_ip);
-                        if lookup.is_none() {
-                            uprintln!(tx, "Sender not in ARP cache");
-                            continue;
-                        }
-                        let src_mac = lookup.unwrap();
-
-                        // convert to a reply
-                        let _reply: icmp::Message<_, icmp::EchoReply, _> =
-                            request.into();
-
-                        // update the IP header
-                        let mut ip = rx_ip.set_source(IP);
-                        ip.set_destination(src_ip);
-                        ip.update_checksum();
-
-                        // update the Ethernet header
-                        rx_eth.set_destination(*src_mac);
-                        rx_eth.set_source(MAC);
-
-                        leds.spin();
-                        uprintln!(tx, "ICMP request, responding");
-                        uprintln!(tx, "Tx({})", rx_eth.len());
-                        #[cfg(not(feature = "usart"))]
-                        reliable_transmit(
-                            &mut tx,
-                            &mut enc28j60,
-                            rx_eth.as_bytes(),
-                        );
-                        #[cfg(feature = "usart")]
-                        usart::send(&mut tx2, rx_eth.as_bytes());
-                    }
-                    ipv4::Protocol::Udp => {
-                        let parsed = udp::Packet::parse(rx_ip.payload());
-                        if parsed.is_err() {
-                            // malformed UDP packet
-                            uprintln!(tx, "Malformed UDP packet");
-                            continue;
-                        }
-                        let rx_udp = parsed.unwrap();
-
-                        let lookup = cache.get(&src_ip);
-                        if lookup.is_none() {
-                            uprintln!(tx, "Sender not in ARP cache");
-                            continue;
-                        }
-                        let src_mac = lookup.unwrap();
-
-                        let src_port = rx_udp.get_source();
-                        let dst_port = rx_udp.get_destination();
-
-                        if dst_port != COAP_PORT {
-                            continue;
-                        }
-
-                        // Handle the request
-                        let res = oscore.handle(&mut tx, rx_udp.payload());
-                        if res.is_none() {
-                            continue;
-                        }
-                        let res = res.unwrap();
-
-                        // Build Ethernet frame from scratch
-                        let mut eth = ether::Frame::new(&mut tx_buf[..]);
-                        eth.set_destination(*src_mac);
-                        eth.set_source(MAC);
-
-                        eth.ipv4(|ip| {
-                            // Update the IP header
-                            ip.set_source(IP);
-                            ip.set_destination(src_ip);
-                            ip.udp(|udp| {
-                                // Update the UDP header
-                                udp.set_source(COAP_PORT);
-                                udp.set_destination(src_port);
-                                // Wrap CoAP packet
-                                udp.set_payload(&res);
-                            });
-                        });
-
-                        leds.spin();
-                        uprintln!(tx, "Responding with CoAP packet");
-                        uprintln!(tx, "Tx({})", eth.len());
-                        #[cfg(not(feature = "usart"))]
-                        reliable_transmit(
-                            &mut tx,
-                            &mut enc28j60,
-                            eth.as_bytes(),
-                        );
-                        #[cfg(feature = "usart")]
-                        usart::send(&mut tx2, eth.as_bytes());
-                    }
-                    _ => {}
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
-/// Retries sending until no error is returned.
-#[allow(deprecated)]
-#[cfg(not(feature = "usart"))]
-fn reliable_transmit<E, SPI, NCS>(
-    tx: &mut Tx<USART1>,
-    enc28j60: &mut Enc28j60<
-        SPI,
-        NCS,
-        enc28j60::Unconnected,
-        enc28j60::Unconnected,
-    >,
-    bytes: &[u8],
-) where
-    E: core::fmt::Debug,
-    SPI: embedded_hal::blocking::spi::Transfer<u8, Error = E>
-        + embedded_hal::blocking::spi::Write<u8, Error = E>,
-    NCS: embedded_hal::digital::OutputPin,
-{
-    loop {
-        match enc28j60.transmit(bytes) {
-            Ok(()) => break,
-            Err(e) => {
-                uprintln!(tx, "{:?}", e);
-            }
-        }
+        leds.spin();
+        uprintln!(tx, "Responding with CoAP packet");
+        uprintln!(tx, "Tx({})", res.len());
+        udp.blocking_send(&ip, port, &res).expect("Failed sending");
     }
 }
 

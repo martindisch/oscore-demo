@@ -9,21 +9,15 @@ version = "0.1.0"
 cortex-m = "0.6.0"
 cortex-m-rt = "0.6.10"
 panic-semihosting = "0.5.3"
-heapless = "0.5.1"
 stm32f4xx-hal = { version = "0.5.0", features = ["rt", "stm32f407"] }
 coap-lite = { version = "0.3.0", default-features = false }
 alloc-cortex-m = "0.3.5"
 embedded-hal = "0.2.3"
-nb = "0.1.2"
 util = { path = "../util" }
 
-[dependencies.enc28j60]
-git = "https://github.com/martindisch/enc28j60"
-rev = "faeabb8325d96a08cd2be5d40e110ca89e0f2efb"
-
-[dependencies.jnet]
-git = "https://github.com/japaric/jnet"
-rev = "b5bd70cb998b1e01236f6b07ebc516a0359fde3d"
+[dependencies.w5500]
+git = "https://github.com/kellerkindt/w5500"
+rev = "f8e6bcf20adfca6cffaeff72971877d2c0890a42"
 
 [dependencies.oscore]
 git = "https://github.com/martindisch/oscore"
@@ -38,7 +32,3 @@ bench = false
 [lib]
 test = false
 bench = false
-
-[features]
-# Sends Ethernet frames over USART2 instead of enc28j60
-usart = []

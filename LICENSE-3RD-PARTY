@@ -5,14 +5,11 @@ applies to:
 - cortex-m, Copyright (c) 2016 Jorge Aparicio
 - cortex-m-rt, Copyright (c) 2017 Jorge Aparicio
 - panic-semihosting, Copyright (c) 2018 Jorge Aparicio
-- heapless, Copyright (c) 2017 Jorge Aparicio
 - alt-stm32f30x-hal, Copyright (c) 2018 Jorge Aparicio
 - coap-lite, Copyright (c) 2019 Martin Disch
 - alloc-cortex-m, Copyright (c) 2016-2018 Jorge Aparicio
 - embedded-hal, Copyright (c) 2017-2018 Jorge Aparicio
-- nb, Copyright (c) 2017 Jorge Aparicio
-- enc28j60, Copyright (c) 2018 Jorge Aparicio
-- jnet, Copyright (c) 2018 Jorge Aparicio
+- w5500, Copyright (c) 2019 Michael Watzko
 - oscore, Copyright (c) 2019 Martin Disch
 -------------------------------------------------------------------------------
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -40,14 +37,11 @@ applies to:
 - cortex-m
 - cortex-m-rt
 - panic-semihosting
-- heapless
 - alt-stm32f30x-hal
 - coap-lite
 - alloc-cortex-m
 - embedded-hal
-- nb
-- enc28j60
-- jnet
+- w5500
 - oscore
 -------------------------------------------------------------------------------
                                  Apache License

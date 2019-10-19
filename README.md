@@ -19,23 +19,14 @@ $ rustup target add thumbv7em-none-eabihf
 ## Hardware setup
 This is the wiring:
 ```
-ENC28J60    STM32F303/407
---------    -------------
+W5500       STM32F303/407
+-----       -------------
 VCC         3V
 GND         GND
 MISO        PB4
 MOSI        PB5
 SCK         PB3
 CS          PA15
-```
-
-To use USART instead of Ethernet (pass `--features usart` to `cargo run`):
-```
-STM32F303   STM32F407
----------   ---------
-PD5 (TX)    PD6 (RX)
-PD6 (RX)    PD5 (TX)
-GND         GND
 ```
 
 And for getting serial debug output (using the SparkFun FTDI Basic Breakout as
