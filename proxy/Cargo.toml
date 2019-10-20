@@ -1,0 +1,8 @@
+[package]
+name = "proxy"
+version = "0.1.0"
+authors = ["Martin Disch <martindisch@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+coap-lite = "0.3.0"
