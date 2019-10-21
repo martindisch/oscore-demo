@@ -50,6 +50,14 @@ fn main() {
                 .required(true),
         )
         .arg(
+            Arg::with_name("proxy")
+                .short("r")
+                .long("proxy")
+                .value_name("ADDRESS")
+                .takes_value(true)
+                .help("CoAP proxy to use"),
+        )
+        .arg(
             Arg::with_name("DEST")
                 .help("The destination server")
                 .required(true),
@@ -57,12 +65,13 @@ fn main() {
         .get_matches();
     let port = matches.value_of("port").unwrap();
     let destination = matches.value_of("DEST").unwrap();
+    let proxy = matches.value_of("proxy");
 
     let socket = UdpSocket::bind(format!("0.0.0.0:{}", port))
         .expect("Unable to bind to port");
 
     // Do EDHOC exchange
-    let (master_secret, master_salt) = edhoc(&socket, destination);
+    let (master_secret, master_salt) = edhoc(&socket, destination, proxy);
     // Initialize OSCORE context
     let mut oscore = SecurityContext::new(
         master_secret,
@@ -72,11 +81,15 @@ fn main() {
     )
     .expect("Unable to build security context");
     // Start making OSCORE requests
-    oscore_requests(&socket, destination, &mut oscore);
+    oscore_requests(&socket, destination, proxy, &mut oscore);
 }
 
 /// Does an EDHOC exchange with the given destination.
-fn edhoc(socket: &UdpSocket, destination: &str) -> (Vec<u8>, Vec<u8>) {
+fn edhoc(
+    socket: &UdpSocket,
+    destination: &str,
+    proxy: Option<&str>,
+) -> (Vec<u8>, Vec<u8>) {
     // "Generate" an ECDH key pair (this is hardcoded, but MUST be
     // ephemeral and generated randomly)
     let eph = [
@@ -100,7 +113,8 @@ fn edhoc(socket: &UdpSocket, destination: &str) -> (Vec<u8>, Vec<u8>) {
     let msg2_bytes = send_receive(
         &socket,
         destination,
-        &build_edhoc_request(msg1_bytes),
+        proxy,
+        &build_edhoc_request(msg1_bytes, destination, proxy),
         true,
     );
     println!("Sent message_1 to peer and received message_2");
@@ -112,14 +126,19 @@ fn edhoc(socket: &UdpSocket, destination: &str) -> (Vec<u8>, Vec<u8>) {
                 panic!("Received error msg: {}", s)
             }
             Err(OwnOrPeerError::OwnError(b)) => {
-                send(&socket, destination, &build_edhoc_request(b));
+                send(&socket, destination, proxy,&build_edhoc_request(b, destination, proxy));
                 panic!("Ran into an issue dealing with msg_2")
             }
             Ok(val) => val,
         };
     let msg3_sender = match msg2_verifier.verify_message_2(&AUTH_PEER) {
         Err(OwnError(b)) => {
-            send(&socket, destination, &build_edhoc_request(b));
+            send(
+                &socket,
+                destination,
+                proxy,
+                &build_edhoc_request(b, destination, proxy),
+            );
             panic!("Ran into an issue verifying message_2")
         }
         Ok(val) => val,
@@ -127,7 +146,12 @@ fn edhoc(socket: &UdpSocket, destination: &str) -> (Vec<u8>, Vec<u8>) {
     let (msg3_bytes, master_secret, master_salt) =
         match msg3_sender.generate_message_3() {
             Err(OwnError(b)) => {
-                send(&socket, destination, &build_edhoc_request(b));
+                send(
+                    &socket,
+                    destination,
+                    proxy,
+                    &build_edhoc_request(b, destination, proxy),
+                );
                 panic!("Ran into an issue generating message_3")
             }
             Ok(val) => val,
@@ -142,7 +166,8 @@ fn edhoc(socket: &UdpSocket, destination: &str) -> (Vec<u8>, Vec<u8>) {
     send_receive(
         &socket,
         destination,
-        &build_edhoc_request(msg3_bytes),
+        proxy,
+        &build_edhoc_request(msg3_bytes, destination, proxy),
         false,
     );
     println!("Sent message_3 to peer");
@@ -154,14 +179,17 @@ fn edhoc(socket: &UdpSocket, destination: &str) -> (Vec<u8>, Vec<u8>) {
 fn oscore_requests(
     socket: &UdpSocket,
     destination: &str,
+    proxy: Option<&str>,
     oscore: &mut SecurityContext,
 ) {
     for i in 0.. {
         // Build a CoAP request to one of the two resources
         let coap = if i % 2 == 0 {
-            build_resource_request(b"hello".to_vec(), None)
+            build_resource_request(destination, proxy, b"hello".to_vec(), None)
         } else {
             build_resource_request(
+                destination,
+                proxy,
                 b"echo".to_vec(),
                 Some(format!("Iteration {}", i).as_bytes().to_vec()),
             )
@@ -171,7 +199,7 @@ fn oscore_requests(
         let protected =
             oscore.protect_request(&coap).expect("Protection failed");
         // Send it to the server
-        let res = send_receive(socket, destination, &protected, false);
+        let res = send_receive(socket, destination, proxy, &protected, false);
         // Unprotect from OSCORE
         let unprotected = oscore
             .unprotect_response(&res)
@@ -190,7 +218,11 @@ fn oscore_requests(
 }
 
 /// Returns a CoAP packet for an EDHOC message.
-fn build_edhoc_request(msg: Vec<u8>) -> Vec<u8> {
+fn build_edhoc_request(
+    msg: Vec<u8>,
+    destination: &str,
+    proxy: Option<&str>,
+) -> Vec<u8> {
     let mut rng = rand::thread_rng();
     let mut req = Packet::new();
 
@@ -206,9 +238,18 @@ fn build_edhoc_request(msg: Vec<u8>) -> Vec<u8> {
     // This would be the EDHOC Content-Format, but it's
     // not standardized yet
     req.set_content_format(ContentFormat::ApplicationOctetStream);
-    // Request goes to /.well-known/edhoc
-    req.add_option(CoapOption::UriPath, b".well-known".to_vec());
-    req.add_option(CoapOption::UriPath, b"edhoc".to_vec());
+    // Add Proxy-Uri or Uri-Path
+    if proxy.is_some() {
+        req.add_option(
+            CoapOption::ProxyUri,
+            format!("coap://{}/.well-known/edhoc", destination)
+                .as_bytes()
+                .to_vec(),
+        );
+    } else {
+        req.add_option(CoapOption::UriPath, b".well-known".to_vec());
+        req.add_option(CoapOption::UriPath, b"edhoc".to_vec());
+    }
     // Finally, pack in our EDHOC message
     req.payload = msg;
 
@@ -217,6 +258,8 @@ fn build_edhoc_request(msg: Vec<u8>) -> Vec<u8> {
 
 /// Returns a CoAP packet for a GET request to the given resource with payload.
 fn build_resource_request(
+    destination: &str,
+    proxy: Option<&str>,
     uri_path: Vec<u8>,
     payload: Option<Vec<u8>>,
 ) -> Vec<u8> {
@@ -232,7 +275,15 @@ fn build_resource_request(
     req.set_token(vec![rng.gen()]);
     req.header.code = MessageClass::Request(RequestType::Get);
     req.set_content_format(ContentFormat::TextPlain);
-    req.add_option(CoapOption::UriPath, uri_path);
+    // Add Proxy-Uri or Uri-Path
+    if proxy.is_some() {
+        let mut proxy_uri =
+            format!("coap://{}/", destination).as_bytes().to_vec();
+        proxy_uri.extend(uri_path);
+        req.add_option(CoapOption::ProxyUri, proxy_uri);
+    } else {
+        req.add_option(CoapOption::UriPath, uri_path);
+    }
     if let Some(payload) = payload {
         req.payload = payload;
     }
@@ -245,13 +296,21 @@ fn build_resource_request(
 fn send_receive(
     socket: &UdpSocket,
     destination: &str,
+    proxy: Option<&str>,
     packet: &[u8],
     payload_only: bool,
 ) -> Vec<u8> {
     let mut buf = [0; 2048];
 
     socket
-        .send_to(packet, destination)
+        .send_to(
+            packet,
+            if let Some(proxy) = proxy {
+                proxy
+            } else {
+                destination
+            },
+        )
         .expect("Unable to send packet");
     let (amt, _src) =
         socket.recv_from(&mut buf).expect("Failed while receiving");
@@ -266,8 +325,20 @@ fn send_receive(
 }
 
 /// Sends a CoAP packet to the destination.
-fn send(socket: &UdpSocket, destination: &str, packet: &[u8]) {
+fn send(
+    socket: &UdpSocket,
+    destination: &str,
+    proxy: Option<&str>,
+    packet: &[u8],
+) {
     socket
-        .send_to(packet, destination)
+        .send_to(
+            packet,
+            if let Some(proxy) = proxy {
+                proxy
+            } else {
+                destination
+            },
+        )
         .expect("Unable to send packet");
 }
