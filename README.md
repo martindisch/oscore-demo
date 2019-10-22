@@ -4,7 +4,10 @@ This is a demonstration of protecting CoAP with OSCORE on embedded devices.
 It's using the STM32F303VCT6 (server), the STM32F407VGT6U (client) and the
 W5500 Ethernet controller and is therefore pretty specific to the hardware.
 But of course the [EDHOC/OSCORE library](https://github.com/martindisch/oscore)
-is completely hardware independent.
+is completely hardware independent. There is also a simple CoAP proxy (built
+for a `std` environment, can run on a Raspberry Pi for example) between the
+client and server, to demonstrate that OSCORE can protect sensitive data
+end-to-end, but still allows proxying.
 
 ## Dependencies
 
