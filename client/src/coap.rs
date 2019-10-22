@@ -15,22 +15,18 @@ pub struct CoapHandler {
     message_id: u16,
     token: u8,
     oscore_iteration: usize,
-}
-
-impl Default for CoapHandler {
-    fn default() -> CoapHandler {
-        CoapHandler {
-            message_id: 100,
-            token: 0,
-            oscore_iteration: 0,
-        }
-    }
+    proxy_destination: Option<&'static str>,
 }
 
 impl CoapHandler {
     /// Creates a new `CoapHandler`.
-    pub fn new() -> CoapHandler {
-        Default::default()
+    pub fn new(proxy_destination: Option<&'static str>) -> CoapHandler {
+        CoapHandler {
+            message_id: 100,
+            token: 0,
+            oscore_iteration: 0,
+            proxy_destination,
+        }
     }
 
     /// Returns a CoAP request with the first EDHOC message.
@@ -92,8 +88,17 @@ impl CoapHandler {
         // not standardized yet
         req.set_content_format(ContentFormat::ApplicationOctetStream);
         // Request goes to /.well-known/edhoc
-        req.add_option(CoapOption::UriPath, b".well-known".to_vec());
-        req.add_option(CoapOption::UriPath, b"edhoc".to_vec());
+        if let Some(destination) = self.proxy_destination {
+            req.add_option(
+                CoapOption::ProxyUri,
+                format!("coap://{}/.well-known/edhoc", destination)
+                    .as_bytes()
+                    .to_vec(),
+            );
+        } else {
+            req.add_option(CoapOption::UriPath, b".well-known".to_vec());
+            req.add_option(CoapOption::UriPath, b"edhoc".to_vec());
+        }
         // Finally, pack in our EDHOC message
         req.payload = payload;
 
@@ -124,7 +129,14 @@ impl CoapHandler {
         req.set_token(self.get_next_token());
         req.header.code = MessageClass::Request(RequestType::Get);
         req.set_content_format(ContentFormat::TextPlain);
-        req.add_option(CoapOption::UriPath, uri_path);
+        if let Some(destination) = self.proxy_destination {
+            let mut proxy_uri =
+                format!("coap://{}/", destination).as_bytes().to_vec();
+            proxy_uri.extend(uri_path);
+            req.add_option(CoapOption::ProxyUri, proxy_uri);
+        } else {
+            req.add_option(CoapOption::UriPath, uri_path);
+        }
         if let Some(payload) = payload {
             req.payload = payload;
         }

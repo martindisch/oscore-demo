@@ -32,3 +32,8 @@ bench = false
 [lib]
 test = false
 bench = false
+
+[features]
+default = ["proxy"]
+# Uses a CoAP proxy
+proxy = []

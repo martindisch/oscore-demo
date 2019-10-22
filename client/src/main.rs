@@ -56,7 +56,12 @@ fn main() -> ! {
     /* Network configuration */
     let own_mac = MacAddress::new(0x20, 0x18, 0x03, 0x01, 0x00, 0x01);
     let own_ip = IpAddress::new(192, 168, 0, 98);
+    #[cfg(not(feature = "proxy"))]
     let peer_ip = IpAddress::new(192, 168, 0, 99);
+    #[cfg(feature = "proxy")]
+    let peer_ip_str = "192.168.0.99";
+    #[cfg(feature = "proxy")]
+    let proxy_ip = IpAddress::new(192, 168, 0, 97);
     let coap_port = 5683;
 
     // Initialize the allocator BEFORE you use it
@@ -145,7 +150,10 @@ fn main() -> ! {
     let edhoc =
         EdhocHandler::new(AUTH_PRIV, AUTH_PUB, KID.to_vec(), AUTH_PEER);
     // This will be responsible for dealing with CoAP messages
-    let coap = CoapHandler::new();
+    #[cfg(feature = "proxy")]
+    let coap = CoapHandler::new(Some(peer_ip_str));
+    #[cfg(not(feature = "proxy"))]
+    let coap = CoapHandler::new(None);
     // And finally this is the layer for OSCORE
     let mut oscore =
         OscoreHandler::new(edhoc, coap, KID.to_vec(), KID_PEER.to_vec());
@@ -158,6 +166,10 @@ fn main() -> ! {
     let req = oscore.go(&mut tx).unwrap();
     uprintln!(tx, "Sending the first EDHOC packet");
     uprintln!(tx, "Tx({})", req.len());
+    #[cfg(feature = "proxy")]
+    udp.blocking_send(&proxy_ip, coap_port, &req)
+        .expect("Failed sending");
+    #[cfg(not(feature = "proxy"))]
     udp.blocking_send(&peer_ip, coap_port, &req)
         .expect("Failed sending");
 
