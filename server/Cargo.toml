@@ -21,7 +21,7 @@ rev = "f8e6bcf20adfca6cffaeff72971877d2c0890a42"
 
 [dependencies.oscore]
 git = "https://github.com/martindisch/oscore"
-rev = "59ad9d84555e3eec5e4d1fd7c2015275f77fa8a0"
+rev = "d485699a36ab6a69a587e455dc2a5614e66d353d"
 default-features = false
 
 # these are necessary to stop RLS from trying to find tests and complainining
