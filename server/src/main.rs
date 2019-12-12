@@ -43,25 +43,35 @@ fn main() -> ! {
 
     uprintln!(tx, "Basic initialization done");
 
-    bench(&mut tx, 10, || {
-        for _ in 0..200_000 {
-            asm::nop();
-        }
-    });
+    bench(
+        &mut tx,
+        10,
+        || 200_000,
+        |v| {
+            for _ in 0..v {
+                asm::nop();
+            }
+        },
+    );
 
     #[allow(clippy::empty_loop)]
     loop {}
 }
 
 /// Runs the given closure `iterations` times and prints CPU cycles.
-fn bench<W, F>(tx: &mut W, iterations: u32, f: F)
+///
+/// The preparation closure is called before every iteration and its return
+/// type passed into the closure that is measured.
+fn bench<W, P, R, F>(tx: &mut W, iterations: u32, preparation: P, to_bench: F)
 where
     W: Write,
-    F: Fn(),
+    P: Fn() -> R,
+    F: Fn(R),
 {
     for i in 0..iterations {
+        let data = preparation();
         let start = DWT::get_cycle_count();
-        f();
+        to_bench(data);
         let duration = DWT::get_cycle_count() - start;
         uprintln!(tx, "Iteration {} took {} CPU cycles", i, duration);
     }
