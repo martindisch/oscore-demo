@@ -133,21 +133,21 @@ fn main() -> ! {
     // OSCORE
     bench(
         &mut tx,
-        "oscore::derivation",
+        "oscore::context_derivation",
         2,
         || (),
         oscore_bench::context_derivation,
     );
     bench(
         &mut tx,
-        "oscore::protection",
+        "oscore::protection_request",
         2,
         oscore_bench::protection_request_prepare,
         oscore_bench::protection_request,
     );
     bench(
         &mut tx,
-        "oscore::unprotection",
+        "oscore::unprotection_request",
         2,
         oscore_bench::unprotection_request_prepare,
         oscore_bench::unprotection_request,
