@@ -5,6 +5,7 @@ members = [
     "proxy",
     "util",
     "desktop-client",
+    "desktop-server",
 ]
 
 [profile.release]

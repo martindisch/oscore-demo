@@ -1,0 +1,14 @@
+[package]
+name = "desktop-server"
+version = "0.1.0"
+authors = ["Martin Disch <martindisch@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+clap = "2.33.0"
+coap-lite = "0.3.0"
+rand = "0.7.3"
+
+[dependencies.oscore]
+git = "https://github.com/martindisch/oscore"
+rev = "d485699a36ab6a69a587e455dc2a5614e66d353d"
